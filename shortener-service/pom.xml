@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>com.ascs</groupId>
+    <artifactId>ascs-parent</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+  </parent>
+
+  <artifactId>shortener-service</artifactId>
+  <name>shortener-service</name>
+  <description>URL shortener microservice: create, redirect, expiry, click analytics, audit trail</description>
+
+  <dependencies>
+    <!-- the contract this service implements; served at /api/v1/openapi.yaml and checked by ApiContractTest -->
+    <dependency>
+      <groupId>com.ascs</groupId>
+      <artifactId>shortener-api</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-web</artifactId>
+    </dependency>
+    <!-- Cassandra (link storage) and Redis (cache) drivers; versions managed by Spring Boot -->
+    <dependency>
+      <groupId>org.apache.cassandra</groupId>
+      <artifactId>java-driver-core</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.lettuce</groupId>
+      <artifactId>lettuce-core</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <!-- real Redis and Cassandra in Docker for integration tests (skipped when Docker is unavailable) -->
+    <dependency>
+      <groupId>org.testcontainers</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.testcontainers</groupId>
+      <artifactId>cassandra</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+      </plugin>
+      <plugin>
+        <groupId>org.jacoco</groupId>
+        <artifactId>jacoco-maven-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>check</id>
+            <configuration>
+              <!-- driver adapters need real Redis/Cassandra: covered by the Testcontainers tests when Docker is present -->
+              <excludes>
+                <exclude>com/ascs/shortener/infra/cassandra/**</exclude>
+                <exclude>com/ascs/shortener/infra/redis/**</exclude>
+                <exclude>com/ascs/shortener/web/ExternalStorageConfig*</exclude>
+              </excludes>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>

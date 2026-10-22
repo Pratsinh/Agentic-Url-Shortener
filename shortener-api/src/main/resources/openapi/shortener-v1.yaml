@@ -1,0 +1,258 @@
+openapi: 3.0.3
+info:
+  title: ASCS URL shortener
+  version: 1.0.0
+  description: |
+    Contract of the URL shortener microservice. The service implements exactly these operations
+    (ApiContractTest fails the build on drift in either direction); clients, including the orchestrator's
+    tool gateway, depend on this document and never on the service's code.
+
+    Every error is an RFC 7807 problem (`application/problem+json`). Every response carries `X-Request-Id`:
+    a safe incoming id (`[A-Za-z0-9._-]{1,64}`) is reused, anything else is replaced by a generated one.
+servers:
+  - url: http://localhost:8080
+tags:
+  - name: links
+  - name: audit
+  - name: contract
+
+paths:
+  /api/v1/links:
+    post:
+      tags: [links]
+      operationId: createLink
+      summary: Shorten a URL
+      description: Only public http(s) URLs are accepted (loopback, private, link-local and obfuscated IP hosts are rejected).
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateLinkRequest'
+      responses:
+        '201':
+          description: Created
+          headers:
+            Location:
+              description: The short URL
+              schema: { type: string, format: uri }
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateLinkResponse'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+        '500': { $ref: '#/components/responses/ServerError' }
+
+  /{code}:
+    get:
+      tags: [links]
+      operationId: redirect
+      summary: Redirect to the original URL and count a click
+      description: 302, not 301, so browsers do not cache the redirect and every click is counted.
+      parameters:
+        - $ref: '#/components/parameters/Code'
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '302':
+          description: Found
+          headers:
+            Location:
+              description: The original URL
+              schema: { type: string, format: uri }
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+        '404': { $ref: '#/components/responses/NotFound' }
+        '410': { $ref: '#/components/responses/Gone' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+        '500': { $ref: '#/components/responses/ServerError' }
+
+  /api/v1/links/{code}/stats:
+    get:
+      tags: [links]
+      operationId: getLinkStats
+      summary: Click analytics of a link (also for expired links)
+      parameters:
+        - $ref: '#/components/parameters/Code'
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: OK
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LinkStats'
+        '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+        '500': { $ref: '#/components/responses/ServerError' }
+
+  /api/v1/links/{code}/audit:
+    get:
+      tags: [audit]
+      operationId: getLinkAudit
+      summary: Audit history of one link
+      parameters:
+        - $ref: '#/components/parameters/Code'
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: OK
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AuditEvent'
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/ServerError' }
+
+  /api/v1/audit:
+    get:
+      tags: [audit]
+      operationId: getRecentAudit
+      summary: Most recent audit events, newest last
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, format: int32, minimum: 1, maximum: 1000, default: 100 }
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: OK
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AuditEvent'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '500': { $ref: '#/components/responses/ServerError' }
+
+  /api/v1/openapi.yaml:
+    get:
+      tags: [contract]
+      operationId: getContract
+      summary: This document
+      responses:
+        '200':
+          description: OK
+          content:
+            application/yaml:
+              schema: { type: string }
+
+components:
+  parameters:
+    Code:
+      name: code
+      in: path
+      required: true
+      schema: { type: string, pattern: '^[0-9A-Za-z]+$' }
+    RequestId:
+      name: X-Request-Id
+      in: header
+      required: false
+      description: Correlation id; reused when it matches the pattern, replaced otherwise.
+      schema: { type: string, pattern: '^[A-Za-z0-9._-]{1,64}$' }
+
+  headers:
+    RequestId:
+      description: Correlation id of this request (also on every log line)
+      schema: { type: string }
+
+  schemas:
+    CreateLinkRequest:
+      type: object
+      required: [url]
+      properties:
+        url:
+          type: string
+          format: uri
+          description: Public http(s) URL without user info
+        ttlSeconds:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 31536000
+          nullable: true
+          description: Omit for a link that never expires; at most 365 days
+    CreateLinkResponse:
+      type: object
+      required: [code, shortUrl, originalUrl, createdAt]
+      properties:
+        code: { type: string, example: aZ3k9Qx }
+        shortUrl: { type: string, format: uri }
+        originalUrl: { type: string, format: uri }
+        createdAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time, nullable: true }
+    LinkStats:
+      type: object
+      required: [code, originalUrl, totalClicks, createdAt]
+      properties:
+        code: { type: string }
+        originalUrl: { type: string, format: uri }
+        totalClicks: { type: integer, format: int64 }
+        createdAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time, nullable: true }
+        lastAccessedAt: { type: string, format: date-time, nullable: true, description: Null until the first redirect }
+    AuditEvent:
+      type: object
+      required: [seq, at, action, detail]
+      properties:
+        seq: { type: integer, format: int64, description: Gaps mean older events were evicted }
+        at: { type: string, format: date-time }
+        action:
+          type: string
+          enum: [LINK_CREATED, LINK_CREATE_REJECTED, LINK_REDIRECTED, LINK_REDIRECT_REJECTED]
+        code: { type: string, nullable: true, description: Null when no link was involved }
+        detail: { type: string, description: 'Outcome; carries the URL host only, never the full URL' }
+    Problem:
+      type: object
+      description: RFC 7807 problem details
+      properties:
+        type: { type: string, format: uri }
+        title: { type: string }
+        status: { type: integer, format: int32 }
+        detail: { type: string }
+        instance: { type: string }
+        errorRef: { type: string, description: Present on 500 only; quote it to operators }
+
+  responses:
+    BadRequest:
+      description: Invalid URL, TTL, limit or request body
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    NotFound:
+      description: Unknown code
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Gone:
+      description: The link has expired
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Unavailable:
+      description: Code space exhausted or storage unavailable; safe to retry later
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    ServerError:
+      description: Unexpected failure; no internals, only an errorRef
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }

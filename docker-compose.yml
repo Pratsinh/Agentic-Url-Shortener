@@ -1,0 +1,33 @@
+# Local infrastructure for the "cassandra" profile: link storage in Cassandra, redirect cache in Redis.
+#   docker compose up -d          # first start of Cassandra takes about a minute; wait for "healthy"
+#   docker compose ps
+services:
+  cassandra:
+    image: cassandra:5.0
+    ports:
+      - "9042:9042"
+    environment:
+      CASSANDRA_DC: datacenter1
+      CASSANDRA_ENDPOINT_SNITCH: GossipingPropertyFileSnitch
+      MAX_HEAP_SIZE: 512M
+      HEAP_NEWSIZE: 128M
+    healthcheck:
+      test: ["CMD-SHELL", "cqlsh -e 'DESCRIBE KEYSPACES' || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+    volumes:
+      - cassandra-data:/var/lib/cassandra
+
+  redis:
+    image: redis:7.4-alpine
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--save", "", "--appendonly", "no"]   # pure cache: no persistence needed
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 10
+
+volumes:
+  cassandra-data:

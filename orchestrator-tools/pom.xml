@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>com.ascs</groupId>
+    <artifactId>ascs-parent</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+  </parent>
+
+  <artifactId>orchestrator-tools</artifactId>
+  <name>orchestrator-tools</name>
+  <description>Adapters that expose external systems to the orchestrator's tool gateway; the shortener tools use the generated client</description>
+
+  <dependencies>
+    <dependency>
+      <groupId>com.ascs</groupId>
+      <artifactId>orchestrator</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <!-- the shortener is reached only through its contract: the generated client and the OpenAPI document itself -->
+    <dependency>
+      <groupId>com.ascs</groupId>
+      <artifactId>shortener-client</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.ascs</groupId>
+      <artifactId>shortener-api</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.fasterxml.jackson.dataformat</groupId>
+      <artifactId>jackson-dataformat-yaml</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.jacoco</groupId>
+        <artifactId>jacoco-maven-plugin</artifactId>
+      </plugin>
+      <!-- also packages an executable jar (classifier "exec") so scripts can run the demo with plain `java -jar` -->
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>repackage</id>
+            <goals><goal>repackage</goal></goals>
+            <configuration>
+              <classifier>exec</classifier>
+              <mainClass>com.ascs.orchestrator.tools.shortener.ToolGatewayDemo</mainClass>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>
