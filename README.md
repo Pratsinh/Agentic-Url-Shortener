@@ -17,6 +17,10 @@ Java 21, Spring Boot 3.3, built as six Maven modules; the orchestrator and the s
 The orchestrator works on the shortener as a target system: it reads its source tree (impact analysis, review, QA),
 and an agent calls the running service only through the governed tool gateway and the client generated from the contract.
 
+**End-to-end architecture diagram:** [`docs/TECHNICAL_DESIGN.md` §4.0](docs/TECHNICAL_DESIGN.md#40-end-to-end-view).
+**Generated design document** (component and sequence diagrams derived from the code): [`docs/delivery/design.md`](docs/delivery/design.md).
+**Run the full SDLC on your own requirement:** [`docs/AGENTIC_SETUP.md`, walkthrough](docs/AGENTIC_SETUP.md#walkthrough-run-the-full-sdlc-on-your-own-requirement).
+
 Start with the technical design document `docs/TECHNICAL_DESIGN.md` (architecture, data model,
 API, security, failure modes, decisions); `docs/PRODUCTION_READINESS.md` gives an honest status.
 

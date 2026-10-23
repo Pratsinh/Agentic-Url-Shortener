@@ -94,9 +94,66 @@ rule enforces that.
 
 ## 4. Architecture
 
+### 4.0 End-to-end view
+
+A requirement enters at the top and leaves as a human-approved commit on an isolated branch; the shortener is the
+system being changed (its source, in a git worktree) and operated (its running API, through the tool gateway).
+Solid arrows are calls, dashed arrows are reads of evidence. The model only proposes: every gate, approval, retry,
+fallback and rollback is decided by the engine or a human.
+
+```mermaid
+flowchart TB
+    human(["Human: requester, approver, release manager"])
+    claude[["Claude via Anthropic API"]]
+
+    subgraph AG["agentic-sdlc: LLM agents"]
+        cli["AgenticCli / run-agentic.sh"]
+        pipe["AgenticPipeline: discovery graph, then delivery graph compiled from the approved plan"]
+        llmAgents["LLM agents: analyst, planner, implementers, repair, reviewer, review-fix, docs"]
+        detAgents["Deterministic agents: clarification, verification (real mvn), security scan, release, commit"]
+        loop["AgentLoop: tool use + strict schema-validated submit"]
+        prov["RecordingProvider: call ledger, cost cap, redacted transcripts"]
+        hg["HumanApprovalGateway: console or file inbox, separation of duties"]
+        ws["GitWorkspace: worktree on agentic/runId, PathGuard, WriteScope from the plan"]
+    end
+
+    subgraph OR["orchestrator: governed engine, JDK only"]
+        eng["WorkflowEngine: DAG, gates, retries, fallback, approvals, rollback, safe-stop, re-plan"]
+        store["ArtifactStore: versions + lineage"]
+        pol["PolicyEngine: security, compliance, change control"]
+        gw["ToolGateway: grants, argument checks, ToolPolicy, approval for mutating calls"]
+        obs["AuditLog (hash chain) + Metrics (success, retry/rollback, MTTR, latency)"]
+        roles["Rule-based role agents + scenarios: run-delivery.sh, run-scenarios.sh"]
+    end
+
+    subgraph TG["target system: URL shortener"]
+        api["shortener-api: OpenAPI contract"]
+        svc["shortener-service: hexagonal Spring Boot service"]
+        client["shortener-client: generated from the contract"]
+        tools["orchestrator-tools: shortener tools over the client"]
+        data[("Cassandra + Redis, or in-memory")]
+    end
+
+    human -->|"requirement"| cli --> pipe --> eng
+    eng --> llmAgents & detAgents
+    llmAgents --> loop --> prov --> claude
+    loop --> gw
+    gw -->|"read / write files"| ws
+    ws -.->|"source tree"| svc
+    detAgents -->|"mvn verify, git commit"| ws
+    eng --> store & pol & obs
+    eng -->|"approval checkpoints"| hg <--> human
+    roles --> eng
+    roles -.->|"scans source, coverage"| svc
+    gw --> tools --> client -->|"HTTP + X-Request-Id"| svc
+    api -.->|"contract"| svc & client
+    svc --> data
+    pipe -.->|"summary, audit.jsonl, plan, diff"| human
+```
+
 ### 4.1 Module decomposition
 
-Five Maven modules. The orchestrator and the shortener have no compile dependency on each other's code; the
+Six Maven modules. The orchestrator and the shortener have no compile dependency on each other's code; the
 shortener's public surface is its OpenAPI contract, published as its own artifact so clients depend on the contract.
 
 | Maven module | Contents | Depends on |
@@ -106,6 +163,7 @@ shortener's public surface is its OpenAPI contract, published as its own artifac
 | `shortener-client` | `com.ascs.contract.shortener.*`, generated from `shortener-api` at build time | `shortener-api` |
 | `orchestrator` | `com.ascs.orchestrator.*` incl. the tool gateway; plain Java | - (JDK only) |
 | `orchestrator-tools` | `com.ascs.orchestrator.tools.shortener.*`: gateway tools over the generated client | `orchestrator`, `shortener-client` |
+| `agentic-sdlc` | `com.ascs.agentic.*`: Claude agents, workflow graphs, tool loop, human channels, git worktree; see `docs/AGENTIC_SETUP.md` | `orchestrator`, Anthropic Java SDK |
 
 `ApiContractTest` keeps contract and implementation in step: every documented operation must be implemented, every
 endpoint documented, and response bodies must match the documented schemas. The orchestrator treats

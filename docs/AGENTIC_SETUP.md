@@ -86,6 +86,57 @@ Configuration (environment): `AGENTIC_MODEL` (the script defaults it to `claude-
 Each run is recorded under `.agentic/runs/<runId>/`: `summary.md` (stages, human decisions, governance events,
 reliability metrics, model calls), `audit.jsonl`, `metrics.json`, `llm/calls.jsonl`, `llm/transcripts/`, `artifacts/`.
 
+## Walkthrough: run the full SDLC on your own requirement
+
+1. **Prepare.** Commit or stash local changes (the run's worktree is created from the committed HEAD), set
+   `ANTHROPIC_API_KEY`, then check toolchain and credentials:
+   ```bash
+   ./scripts/run-agentic.sh doctor          # must end with "doctor: all checks passed"
+   ```
+2. **Start the run** with a requirement in plain English (or `--requirement-file PATH` for a longer one):
+   ```bash
+   ./scripts/run-agentic.sh run --requirement "Add DELETE /api/v1/links/{code} so the owner can remove a link; \
+   a deleted code returns 404" --approval console --approver "Your Name"
+   ```
+   It prints the run id and its record folder `.agentic/runs/<runId>/`.
+3. **Answer the clarification** (`clarify` stage). The analyst lists ambiguities as `AMB-1`, `AMB-2`, ... with a
+   proposed assumption each. Type `answer`, then one line per question, then a line with only `.`:
+   ```
+   > decision: answer
+   AMB-1: accept
+   AMB-2: deleting an expired link also returns 204
+   .
+   ```
+   `reject` stops the run here. Every ambiguity must be addressed; nothing is assumed silently.
+4. **Approve the plan** (`plan` stage). You see the design, the task graph (which tasks run in parallel), the files
+   each task may change and which task owns each acceptance criterion. Answer `approve`, `reject`, or `revise` with
+   feedback: the planner then re-plans with it and asks again.
+5. **Let the delivery run.** No input needed: baseline tests, parallel implementation, the full Maven build and test
+   suite (a failure goes to the repair agent once, otherwise the run rolls back), independent review and docs, then
+   the security scan. Progress is visible in `.agentic/runs/<runId>/audit.jsonl`.
+6. **Release go/no-go** (`release` stage, HIGH impact). You see the diff summary, test results against the baseline,
+   the review verdict per acceptance criterion and the security findings. `approve` commits on `agentic/<runId>`;
+   `reject` discards the worktree and the branch.
+7. **Inspect the evidence.**
+   ```bash
+   cat .agentic/runs/<runId>/summary.md                 # stages, human decisions, governance events, metrics, model calls
+   ls  .agentic/runs/<runId>/artifacts/                 # requirement-analysis.md, plan.md, review, docs, security, release notes
+   ./scripts/run-agentic.sh verify-audit <runId>        # re-verify the persisted hash chain
+   git log -1 --stat agentic/<runId>                    # the approved commit
+   git diff HEAD...agentic/<runId>                      # the full change
+   ```
+8. **Merge (your decision, outside the system).** Review the branch like any pull request, run
+   `./scripts/validate-all.sh` on it, then merge or delete it: `git branch -D agentic/<runId>`.
+
+Final status printed by the run: `DELIVERED` (commit on the branch), `REJECTED_AT_RELEASE`, `ROLLED_BACK`
+(verification failed even after repair; branch discarded), `STOPPED_IN_DISCOVERY_<outcome>` (e.g. clarification or
+plan rejected, or a model call failed; nothing implemented) or `STOPPED_IN_DELIVERY_<outcome>` (e.g. a security
+finding safe-stopped the run). Each outcome is a governed result, not a crash; `summary.md` says why.
+
+For an unattended setup use `--approval file`: each question appears as
+`.agentic/runs/<runId>/inbox/<id>.request.md`; answer by writing `<id>.response.txt` in the format above.
+To try the built-in requirements instead, use `--scenario greenfield | brownfield | ambiguous`.
+
 ## Testing
 
 The module's 36 tests run without a key or network: `ScriptedProvider` replays model turns, so the pipeline,
