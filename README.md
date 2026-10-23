@@ -110,7 +110,8 @@ The planner is a deterministic stand-in for an LLM; an LLM implementation of `To
 
 ## Run
 
-**Validate everything with one command** (JDK 21+, Maven; Git Bash on Windows). CI (`.github/workflows/ci.yml`) runs the same script on every pull request and push to `main`:
+**Validate everything with one command** (JDK 21+, Maven; Git Bash on Windows). Run it before merging any change,
+including the pull requests the agents open (there is no hosted CI yet):
 ```bash
 ./scripts/validate-all.sh              # tests + coverage gate, agent pipeline, scenarios, then starts the service,
                                       # runs the HTTP smoke test and lets an agent operate it through the tool gateway

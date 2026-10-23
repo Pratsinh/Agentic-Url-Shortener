@@ -147,9 +147,11 @@ reliability metrics, model calls), `audit.jsonl`, `metrics.json`, `llm/calls.jso
    git diff HEAD...agentic/<runId>                      # the full change
    ```
 8. **Review and merge (your decision, outside the system).** With pull requests enabled, review the PR on GitHub:
-   its description is the release evidence plus the approvals and run id; the CI workflow (`.github/workflows/ci.yml`: `validate-all.sh`, i.e. all tests, the coverage gate, scenarios and the live service checks) runs on it automatically;
-   merge or close it there. Without them, review the branch locally, run `./scripts/validate-all.sh` on it, then
-   push it and open a PR yourself (`git push origin agentic/<runId>`) or delete it (`git branch -D agentic/<runId>`).
+   its description is the release evidence plus the approvals and run id. Check out its branch and run
+   `./scripts/validate-all.sh` (all modules' tests, the coverage gate, scenarios and the live service checks; the
+   pipeline's own verify stage runs only `shortener-service` tests), then merge or close it there. Without pull
+   requests, do the same on the local branch, then push it and open a PR yourself (`git push origin agentic/<runId>`)
+   or delete it (`git branch -D agentic/<runId>`).
 
 Final status printed by the run: `DELIVERED` (commit on the branch, and the PR when enabled), `DELIVERED_PR_FAILED`
 (approved commit kept on the local branch; push or PR creation failed, see `summary.md`), `REJECTED_AT_RELEASE`, `ROLLED_BACK`

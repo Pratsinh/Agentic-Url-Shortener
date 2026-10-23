@@ -647,7 +647,7 @@ outside the driver adapters; 37 of 39 acceptance criteria verified by passing te
 
 | Area | Gap | Proposed next step |
 |---|---|---|
-| Verification | Docker-backed storage tests run in CI (GitHub-hosted runners have Docker) but are skipped on machines without it | Run them against a shared staging Cassandra/Redis too |
+| Verification | Docker-backed storage tests run only where Docker is available; there is no hosted CI yet | A CI workflow running `scripts/validate-all.sh` on every pull request (GitHub-hosted runners have Docker) |
 | AI | `agentic-sdlc` LLM agents ran live through review (`docs/live-runs/`) but no live run has reached release yet; the tool-gateway planner is rule-based | Complete live greenfield/brownfield/ambiguous runs; an evaluation harness; an LLM `ToolPlanner` |
 | Tools | Mutating calls are not idempotent, so never retried | `Idempotency-Key` header in the contract and the service; the gateway derives it from the correlation id |
 | Tools | Gateway is in-process, service calls unauthenticated | Service credentials held by the gateway only (OAuth client credentials), scopes per tool |
