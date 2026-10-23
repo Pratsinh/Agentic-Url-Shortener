@@ -68,7 +68,7 @@ The scripts are bash; on Windows run them via Git Bash. Coverage gate (root `pom
 
 ## Known limitations (don't assume otherwise)
 
-The `orchestrator` role agents and the tool-gateway demo planner are deterministic and rule-based (no LLM; `ToolPlanner` is the seam); the scenario agents are stubs; the `agentic-sdlc` LLM agents have not completed a live end-to-end run yet; all state is in memory (no durability/resume); control-plane operations are unauthenticated; the Cassandra/Redis tests run only where Docker (or `CASSANDRA_CONTACT_POINTS`/`REDIS_URL`) is available.
+The `orchestrator` role agents and the tool-gateway demo planner are deterministic and rule-based (no LLM; `ToolPlanner` is the seam); the scenario agents are stubs; the `agentic-sdlc` LLM agents have run live through review (`docs/live-runs/`) but no live run has reached release yet; all state is in memory (no durability/resume); control-plane operations are unauthenticated; the Cassandra/Redis tests run only where Docker (or `CASSANDRA_CONTACT_POINTS`/`REDIS_URL`) is available.
 
 ## Shortener API
 

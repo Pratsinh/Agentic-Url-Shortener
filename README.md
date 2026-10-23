@@ -69,7 +69,11 @@ the release evidence; the system can open a PR but has no way to merge one, so f
 ./scripts/run-agentic.sh doctor                     # toolchain + one live model call (needs ANTHROPIC_API_KEY)
 ./scripts/run-agentic.sh run --scenario greenfield  # or brownfield | ambiguous | --requirement "TEXT"
 ```
-Setup, configuration, approvals and the honest status (no live end-to-end run has completed yet) are in
+**Live run evidence:** [`docs/live-runs/custo-20261022-232230.md`](docs/live-runs/custo-20261022-232230.md): real Claude
+(Sonnet 5.5) took a new requirement through analysis, human clarification, plan approval, two implementation tasks and
+real verification (72 tests, 0 failures, +15 tests), docs and an independent review that caught real defects; it stopped
+before release because the API key was invalidated mid-run, so nothing was committed.
+Setup, configuration, approvals and the honest status (no live run has reached release yet) are in
 [`docs/AGENTIC_SETUP.md`](docs/AGENTIC_SETUP.md). Its 51 tests run without a key (scripted model turns, a fake GitHub API).
 
 ## Governed tool gateway: how an agent (LLM) calls the shortener API
@@ -194,8 +198,9 @@ remaining gaps are explained in `docs/CODE_REVIEW.md`. `agentic-sdlc` adds 51 te
 
 ## Limitations
 The role agents, scenario agents and the tool-gateway planner are deterministic and rule-based. The LLM agents of
-`agentic-sdlc` are implemented and tested with scripted model turns, but no live end-to-end run has completed yet
-(the recorded attempts stopped at the first model call with an API 400; see `docs/AGENTIC_SETUP.md`);
+`agentic-sdlc` are tested with scripted model turns and have run live through analysis, implementation, verification,
+docs and review, but no live run has reached release, commit and pull request yet (the recorded one stopped when its API
+key was invalidated; see `docs/live-runs/`);
 mutating tool calls are not idempotent, so they are never retried; the audit trail and orchestrator state are in memory;
 control-plane and audit endpoints are unauthenticated; the Cassandra/Redis path is verified by Testcontainers tests that
 need Docker. Details in `docs/PRODUCTION_READINESS.md`.

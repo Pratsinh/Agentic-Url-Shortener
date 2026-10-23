@@ -170,10 +170,16 @@ provider are tested deterministically (`mvn -pl agentic-sdlc -am test`). Only `d
 
 ## Status and limitations (honest)
 
-* **No live end-to-end run has completed yet.** The two recorded live attempts stopped in the first stage with an
-  Anthropic API `400 Bad Request`; the engine behaved as designed (bounded retry, downstream stages blocked, worktree
-  discarded, audit chain intact), but the API's error detail was not recorded then. The provider now keeps that
-  detail (redacted, truncated), so the next `doctor` or `run` will show the cause.
+* **Live runs so far.** Run `custo-20261022-232230` ([report](live-runs/custo-20261022-232230.md), real
+  `claude-sonnet-5-5`, 40 model calls, about $1.21, 21m 47s) took a new requirement (a link preview endpoint) through
+  analysis, human clarification, plan approval, two implementation tasks, real verification (72 tests, 0 failures,
+  +15 tests, 99.4% line coverage), docs and an independent review. The review found real defects and its first,
+  inconsistent APPROVE was rejected by the deterministic check. The run then stopped because the API key was
+  invalidated mid-run (401 on the 40th call), so security, release, commit and pull request were blocked and nothing
+  was committed. **No live run has reached release, commit and pull request yet.** Two earlier attempts stopped at
+  the first call with a 400 whose detail was not recorded then; the provider now records the API's error detail.
+* Found by that live run and fixed since: the console took a plan approval from input typed before the question
+  appeared. Early input is now discarded; see `ConsoleHumanChannelTest`.
 * A non-retryable API error (400) still uses the stage's second attempt, which costs one extra failed call.
 * Run state is persisted for evidence but a crashed run cannot be resumed.
 * The writable scope is fixed to `shortener-service` and `shortener-api`; dependency changes need a human.
