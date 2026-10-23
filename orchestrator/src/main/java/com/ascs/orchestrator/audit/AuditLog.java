@@ -6,6 +6,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Consumer;
 
 /**
  * Append-only, hash-chained audit trail. Each event commits to its predecessor's hash, so any
@@ -23,7 +24,8 @@ public final class AuditLog {
         CHANGE_APPLIED, CHANGE_REJECTED, CHANGE_NOOP, STAGE_INVALIDATED, REPLAN,
         HALT_REQUESTED, ROLLBACK_STARTED, ROLLBACK_COMPLETED, ROLLBACK_FAILED,
         RUN_COMPLETED, RUN_ABORTED,
-        TOOL_CALL_REQUESTED, TOOL_CALL_DENIED, TOOL_CALL_RETRY, TOOL_CALL_SUCCEEDED, TOOL_CALL_FAILED
+        TOOL_CALL_REQUESTED, TOOL_CALL_DENIED, TOOL_CALL_RETRY, TOOL_CALL_SUCCEEDED, TOOL_CALL_FAILED,
+        LLM_CALL, LLM_CALL_FAILED, HUMAN_INPUT, PHASE_STARTED, PHASE_COMPLETED, WORKSPACE_CHANGED
     }
 
     public record Event(long seq, Instant at, String runId, String stageId, Type type,
@@ -32,9 +34,19 @@ public final class AuditLog {
 
     private final List<Event> events = new ArrayList<>();
     private final Clock clock;
+    private final Consumer<Event> sink;
 
     public AuditLog(Clock clock) {
+        this(clock, e -> { });
+    }
+
+    /**
+     * @param sink receives every event, in chain order, while the log's lock is held (e.g. an append-only file writer
+     *             for durability). It must not call back into this log; failures are the sink's to handle.
+     */
+    public AuditLog(Clock clock, Consumer<Event> sink) {
         this.clock = clock;
+        this.sink = sink;
     }
 
     public synchronized Event append(String runId, String stageId, Type type, String detail) {
@@ -44,6 +56,7 @@ public final class AuditLog {
         Event e = new Event(seq, at, runId, stageId, type, detail, prev,
                 hashOf(seq, at, runId, stageId, type, detail, prev));
         events.add(e);
+        sink.accept(e);
         return e;
     }
 

@@ -23,6 +23,7 @@ import com.ascs.orchestrator.tools.ToolGatewayTestBridge;
 import com.ascs.orchestrator.tools.ToolOutcome;
 import com.ascs.orchestrator.tools.ToolParam;
 import com.ascs.orchestrator.tools.ToolPlanner;
+import com.ascs.orchestrator.tools.ToolPolicy;
 import com.ascs.orchestrator.tools.ToolResult;
 import com.ascs.orchestrator.tools.ToolSpec;
 import com.ascs.orchestrator.tools.ToolUnavailableException;
@@ -373,5 +374,38 @@ class ToolGatewayTest {
         WorkflowEngine.builder(Fx.graph(StageDefinition.builder("ops").exitGate(Gate.requireOutputs("ops.txt")).build()),
                 Map.of("ops", new ToolUsingAgent(g, idle, 3)), pool).audit(audit).build().run("idle-run", "idle");
         assertTrue(audit.events().stream().anyMatch(e -> e.detail().contains("idle [tool calls: none]")), audit.events().toString());
+    }
+
+    @Test
+    @Verifies({"AC-11.8"})
+    void aWorkspaceWriteRunsWithoutApprovalIsNeverRetriedAndPoliciesSeeTheCallingStage() throws Exception {
+        FakeTool write = new FakeTool("writeFile", Risk.WORKSPACE_WRITE, new ToolOutcome(503, "disk busy"), new ToolOutcome(200, "ok"));
+        List<ToolGateway.Context> seen = new CopyOnWriteArrayList<>();
+        ToolPolicy scope = new ToolPolicy() {
+            @Override public List<Violation> evaluate(ToolSpec tool, ToolCall call) { throw new AssertionError("context-free variant not used"); }
+            @Override public List<Violation> evaluate(ToolGateway.Context ctx, ToolSpec tool, ToolCall call) {
+                seen.add(ctx);
+                return ctx.stageId().equals("ops") ? List.of()
+                        : List.of(new Violation("scope", PolicyCategory.CHANGE_CONTROL, Severity.BLOCK, "outside task scope"));
+            }
+        };
+        ScriptedApprovalGateway approvals = ScriptedApprovalGateway.approveAll("lead", "ok");
+        ToolGateway g = gateway(approvals, write).grant("other", "writeFile").policy(scope).readOnlyAttempts(3).build();
+
+        ToolResult failed = g.invoke(CTX, call("writeFile", Map.of("code", "x")));
+        ToolResult denied = g.invoke(new ToolGateway.Context("run-1", "other", 1), call("writeFile", Map.of("code", "x")));
+
+        assertEquals(ToolResult.Status.FAILED, failed.status());
+        assertEquals("status 503 (workspace writes are not retried)", failed.reason());
+        assertEquals(1, write.calls.size(), "executed once, not retried, and never for the out-of-scope stage");
+        assertEquals("blocked by policy: outside task scope", denied.reason());
+        assertTrue(approvals.requests().isEmpty(), "no per-call human approval for workspace writes");
+        assertEquals(List.of("ops", "other"), seen.stream().map(ToolGateway.Context::stageId).toList());
+    }
+
+    @Test
+    void theDefaultContextAwarePolicyDelegatesToTheContextFreeCheck() {
+        ToolPolicy p = (tool, call) -> List.of(new Violation("p", PolicyCategory.SECURITY, Severity.INFO, call.tool()));
+        assertEquals("t", p.evaluate(CTX, null, call("t", Map.of())).get(0).message());
     }
 }

@@ -137,7 +137,9 @@ public final class StoryCatalog {
                     ac("AC-11.6", "a tool-using agent in a workflow stage", "it runs",
                             "its planner sees only the granted tools, results are framed as untrusted data, and a planner that never finishes fails the attempt"),
                     ac("AC-11.7", "the shortener's OpenAPI contract", "the shortener tools are built and called",
-                            "names, parameters and risk come from the contract and every call carries its correlation id as X-Request-Id"))));
+                            "names, parameters and risk come from the contract and every call carries its correlation id as X-Request-Id"),
+                    ac("AC-11.8", "a WORKSPACE_WRITE tool call", "it is proposed",
+                            "it needs no per-call approval, is never retried, and policies see the calling run and stage (least privilege)"))));
 
     /** Stories whose trigger matches the requirement text, in catalog order. */
     public static List<Story> select(String requirement) {

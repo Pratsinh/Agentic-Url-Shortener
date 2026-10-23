@@ -32,7 +32,8 @@ import java.util.concurrent.atomic.AtomicReference;
  *   <li>the arguments match the tool's spec;</li>
  *   <li>tool policies (BLOCK denies, CRITICAL denies and revokes the run's tool access);</li>
  *   <li>a {@link Risk#MUTATING} call needs a human approval (rejection or timeout denies it);</li>
- *   <li>execution with a correlation id; read-only calls are retried on transient failures, mutating calls never.</li>
+ *   <li>execution with a correlation id; read-only calls are retried on transient failures, writes never
+ *   ({@link Risk#WORKSPACE_WRITE} calls skip the per-call approval: they only touch an isolated workspace).</li>
  * </ol>
  * The output is truncated and withheld entirely if it appears to contain a credential, since it is about to enter
  * a model's context. Every step is audited by tool name, argument names and outcome, never argument values.
@@ -95,7 +96,7 @@ public final class ToolGateway {
         if (invalid != null) return deny(ctx, call, cid, invalid);
 
         for (ToolPolicy p : policies) {
-            for (Violation v : p.evaluate(tool.spec(), call)) {
+            for (Violation v : p.evaluate(ctx, tool.spec(), call)) {
                 log(ctx, AuditLog.Type.POLICY_VIOLATION, where + " " + v.policyId() + " " + v.severity() + ": " + v.message());
                 if (v.severity() == Severity.CRITICAL) {
                     revoked.add(ctx.runId());
@@ -154,7 +155,8 @@ public final class ToolGateway {
             }
             if (attempt >= attempts) {
                 return fail(ctx, call, cid, where, transientFailure
-                        + (tool.spec().risk() == Risk.MUTATING ? " (mutating calls are not retried)" : " after " + attempt + " attempt(s)"));
+                        + (tool.spec().risk() == Risk.READ_ONLY ? " after " + attempt + " attempt(s)"
+                        : tool.spec().risk() == Risk.MUTATING ? " (mutating calls are not retried)" : " (workspace writes are not retried)"));
             }
             log(ctx, AuditLog.Type.TOOL_CALL_RETRY, where + " attempt=" + attempt + " " + transientFailure);
         }

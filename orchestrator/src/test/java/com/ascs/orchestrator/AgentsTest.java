@@ -60,7 +60,7 @@ class AgentsTest {
                 + "an audit trail, error handling and logging, Cassandra storage with a Redis cache, an OpenAPI contract, delivered by governed AI agents"));
         String md = result.outputs().get(RequirementsAgent.OUTPUT);
 
-        assertEquals("11 stories, 49 acceptance criteria", result.rationale());
+        assertEquals("11 stories, 50 acceptance criteria", result.rationale());
         for (StoryCatalog.Story s : StoryCatalog.ALL) assertTrue(md.contains("## " + s.id() + " " + s.title()), s.id());
         assertTrue(md.contains("| AC-1.1 | a valid public http(s) URL | I POST it to /api/v1/links |"));
         assertTrue(md.contains("**As a** visitor, **I want** a short link to take me to the original URL"));
@@ -446,7 +446,7 @@ class AgentsTest {
     void storyCatalogIdsAreUniqueAndSequential() {
         List<String> ids = StoryCatalog.ALL.stream().flatMap(s -> s.criteria().stream()).map(StoryCatalog.Criterion::id).toList();
         assertEquals(ids.size(), ids.stream().distinct().count());
-        assertEquals(49, ids.size());
+        assertEquals(50, ids.size());
         assertTrue(StoryCatalog.ALL.stream().allMatch(s -> !s.components().isEmpty()));
     }
 }
