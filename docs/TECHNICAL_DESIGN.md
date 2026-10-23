@@ -29,7 +29,8 @@ The system has two parts that are deliberately decoupled:
 - Evidence for each SDLC role: user stories, design, commit quality, code review, unit and functional coverage.
 
 ### 1.2 Non-goals (current release)
-- LLM-backed agents (the agents are deterministic and rule-based behind a pluggable interface).
+- LLM-backed agents inside the `orchestrator` module (its agents stay deterministic and rule-based). The separate
+  `agentic-sdlc` module runs Claude agents on the same engine; see `docs/AGENTIC_SETUP.md` for its design and status.
 - Authentication, multi-tenancy, rate limiting.
 - Durable orchestrator runs and durable audit storage.
 - Custom (vanity) short codes, link editing or deletion.
@@ -571,7 +572,7 @@ outside the driver adapters; 37 of 39 acceptance criteria verified by passing te
 | D1 | Own small workflow engine | Temporal, Camunda, LangGraph | Governance semantics are the product and must be explainable line by line | No durability or UI that mature engines offer |
 | D2 | Single-writer coordinator + event queue | Locks around shared state | Removes a whole class of races | One coordinator thread per run |
 | D3 | Commit only after gates, policies and approval | Commit, then review | Rejected output can never contaminate downstream context | The reviewer sees a proposal, not a live system |
-| D4 | Deterministic agents behind `Agent` | LLM agents now | Reproducible, testable, runs offline | Not "intelligent"; the catalog limits requirements |
+| D4 | Deterministic agents behind `Agent`; LLM agents in a separate module (`agentic-sdlc`) on the same interface | LLM agents in the engine module | Engine stays dependency-free, reproducible and testable offline; the model only proposes, the engine decides | Two agent families to maintain; LLM runs are not reproducible |
 | D5 | Hexagonal shortener with ports | Spring-centric layering | Core testable without Spring; storage swappable | More types |
 | D6 | Cassandra for links | Relational DB | Key-value access by code, linear write scaling, multi-DC | Uniqueness needs LWT (Paxos) on create |
 | D7 | Redis cache-aside, not the system of record | Redis as the primary store | A cache failure must never lose data | Possible stale entries until TTL (links are immutable, so harmless) |
@@ -586,7 +587,7 @@ outside the driver adapters; 37 of 39 acceptance criteria verified by passing te
 | Area | Gap | Proposed next step |
 |---|---|---|
 | Verification | The Cassandra/Redis path runs only where Docker is available | Add CI with Docker so the storage tests always run |
-| AI | Agents and the tool planner are rule-based | An LLM `ToolPlanner` (tool specs are JSON Schema already), schema-validated outputs, token budgets |
+| AI | `agentic-sdlc` LLM agents not yet proven by a completed live run; the tool-gateway planner is rule-based | Complete live greenfield/brownfield/ambiguous runs; an evaluation harness; an LLM `ToolPlanner` |
 | Tools | Mutating calls are not idempotent, so never retried | `Idempotency-Key` header in the contract and the service; the gateway derives it from the correlation id |
 | Tools | Gateway is in-process, service calls unauthenticated | Service credentials held by the gateway only (OAuth client credentials), scopes per tool |
 | Security | No authentication or rate limiting; audit endpoints open | API keys or OAuth, per-client rate limits, admin-only audit |

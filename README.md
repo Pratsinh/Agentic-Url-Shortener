@@ -3,7 +3,7 @@
 **URL shortener with a governed agentic SDLC orchestrator.** Agents execute under defined autonomy boundaries;
 humans own oversight, approvals and final quality. The shortener is the reference system the orchestrator plans and changes.
 
-Java 21, Spring Boot 3.3, built as five Maven modules; the orchestrator and the shortener never depend on each other's code:
+Java 21, Spring Boot 3.3, built as six Maven modules; the orchestrator and the shortener never depend on each other's code:
 
 | Module | What it is | Depends on |
 |---|---|---|
@@ -12,6 +12,7 @@ Java 21, Spring Boot 3.3, built as five Maven modules; the orchestrator and the 
 | `shortener-client` | Java client **generated at build time** from `shortener-api` (openapi-generator, `java.net.http` + Jackson); no hand-written code | `shortener-api` |
 | `orchestrator` | The governed workflow engine, role agents and the **tool gateway**; plain Java, no framework | nothing (JDK only) |
 | `orchestrator-tools` | Adapters that expose external systems as gateway tools; the shortener tools use `shortener-client` | `orchestrator`, `shortener-client` |
+| `agentic-sdlc` | **LLM agents (Claude)** on the orchestrator: requirement -> analysis -> human clarification -> plan [approval] -> parallel implementation -> real build/tests -> review \|\| docs -> security scan -> release [approval] -> commit on an isolated branch | `orchestrator`, Anthropic Java SDK |
 
 The orchestrator works on the shortener as a target system: it reads its source tree (impact analysis, review, QA),
 and an agent calls the running service only through the governed tool gateway and the client generated from the contract.
@@ -38,8 +39,32 @@ requirements -> design -> development -+-> code-review --+-> release-readiness (
 | QA | Unit tests; unit coverage (JaCoCo); functional coverage (each acceptance criterion traced to the tests that verify it); every gap against the 100% target | [`docs/delivery/qa-report.md`](docs/delivery/qa-report.md), `<module>/target/site/jacoco/index.html` |
 
 The full run, including the hash-chained audit trail, is in [`docs/delivery/pipeline-run.md`](docs/delivery/pipeline-run.md).
-The agents are deterministic and rule-based, so their output is reproducible and testable. An LLM-backed agent can
-replace any of them behind the same `Agent` interface.
+These role agents are deterministic and rule-based, so their output is reproducible and testable.
+
+## LLM agents with Claude (`agentic-sdlc`)
+
+The same engine also runs real LLM agents: a plain-English requirement becomes a reviewed, tested, human-approved
+commit on branch `agentic/<runId>`. Two workflow graphs: discovery is fixed, delivery is **compiled from the
+human-approved plan** (the plan decides the tasks and their parallelism; the code decides every gate, retry,
+fallback, approval and rollback; no model ever decides those).
+
+```
+discovery:  analyze (LLM) -> clarify (human) -> plan (LLM) [human approval; approve | reject | revise -> re-plan]
+delivery:   baseline -> impl-T1..Tn (LLM, parallel) -> verify (real mvn; fallback repair) -+-> review (LLM, read-only) -+-> security (deterministic)
+                                                                                         +-> docs (LLM) --------------+   -> release [HIGH, human] -> commit
+```
+
+Autonomy boundaries: tools only through `ToolGateway`; an isolated git worktree per run; writes limited to the files
+the approved plan gave each task; build descriptors, CI/CD and VCS internals are refused by policy; a human who is not
+an agent identity must answer every ambiguity and approve plan and release; turns, retries and cost per run are
+bounded; every model call is ledgered with a redacted transcript and the audit chain is persisted.
+
+```bash
+./scripts/run-agentic.sh doctor                     # toolchain + one live model call (needs ANTHROPIC_API_KEY)
+./scripts/run-agentic.sh run --scenario greenfield  # or brownfield | ambiguous | --requirement "TEXT"
+```
+Setup, configuration, approvals and the honest status (no live end-to-end run has completed yet) are in
+[`docs/AGENTIC_SETUP.md`](docs/AGENTIC_SETUP.md). Its 36 tests run without a key (scripted model turns).
 
 ## Governed tool gateway: how an agent (LLM) calls the shortener API
 
@@ -106,6 +131,7 @@ mvn -pl shortener-service -am test -Dtest=ShortenerApiTest -Dsurefire.failIfNoSp
 ./scripts/run-delivery.sh --interactive             # you are the release manager on the terminal
 ./scripts/run-scenarios.sh                          # three governance scenarios (--out docs/SCENARIOS.md to save)
 ./scripts/run-core.sh                               # minimal 7-stage SDLC demo
+./scripts/run-agentic.sh run --scenario greenfield  # LLM agents (needs ANTHROPIC_API_KEY, see docs/AGENTIC_SETUP.md)
 ```
 Tests against real Cassandra and Redis (`CassandraStorageTest`, `RedisCacheTest`, `CassandraProfileApiTest`) use a
 running server if `CASSANDRA_CONTACT_POINTS` / `REDIS_URL` are set, otherwise Docker (Testcontainers), otherwise
@@ -141,6 +167,8 @@ orchestrator/planner   requirement analyzer, task decomposition, DAG planner, co
 orchestrator/scenario  greenfield / brownfield / ambiguous scenarios and report generator
 orchestrator/tools     ToolGateway, ToolSpec/ToolCall/ToolResult, ToolPolicy, ToolPlanner (LLM seam), ToolUsingAgent
 orchestrator-tools/.../tools/shortener   ShortenerContract (specs from OpenAPI), ShortenerTools (generated client), demo
+agentic-sdlc/.../agentic   LLM agents (agents), workflow graphs + pipeline (pipeline), tool loop (loop), Claude provider,
+                           call ledger, redaction (llm), human channels (human), worktree, write policy, path guard (workspace, tools)
 shortener/{domain,app,infra,web}   hexagonal URL shortener with audit trail (only web uses Spring)
 shortener/infra/{cache,redis,cassandra}   Redis cache-aside decorator, Lettuce and Cassandra driver adapters
 shortener/web          Spring MVC: controller, contract endpoint, error handler, request-id filter, configuration
@@ -155,10 +183,13 @@ gateways. Concurrency tests use real threads and latches. Tests declare the acce
 `@Verifies("AC-n.m")`; the QA agent turns those declarations into the functional-coverage matrix.
 
 Coverage: 198 tests (128 orchestrator, 13 orchestrator-tools, 57 shortener-service of which 8 need Docker); outside the Docker-only driver adapters, 99.9% of lines and branches and 100% of methods. The
-remaining gaps are explained in `docs/CODE_REVIEW.md`.
+remaining gaps are explained in `docs/CODE_REVIEW.md`. `agentic-sdlc` adds 36 tests that replay scripted model turns
+(no key, no network); it is not under the coverage gate.
 
 ## Limitations
-Agents and the tool-gateway planner are deterministic and rule-based (not LLM-backed; `ToolPlanner` is the seam for one);
+The role agents, scenario agents and the tool-gateway planner are deterministic and rule-based. The LLM agents of
+`agentic-sdlc` are implemented and tested with scripted model turns, but no live end-to-end run has completed yet
+(the recorded attempts stopped at the first model call with an API 400; see `docs/AGENTIC_SETUP.md`);
 mutating tool calls are not idempotent, so they are never retried; the audit trail and orchestrator state are in memory;
 control-plane and audit endpoints are unauthenticated; the Cassandra/Redis path is verified by Testcontainers tests that
 need Docker. Details in `docs/PRODUCTION_READINESS.md`.

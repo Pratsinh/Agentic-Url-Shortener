@@ -21,9 +21,9 @@ Legend: **Solid** = implemented and tested to a production standard for its scop
 | Durability and recovery | **Missing** | engine is single-use and in memory | Persist run state/events (event sourcing fits the design); resume after crash; idempotency keys for agent side effects |
 | Scale and tenancy | **Missing** | one engine per run, caller supplies the pool | Run scheduler, queue/backpressure, quotas, bounded pools, multi-tenant isolation |
 | Control-plane security | **Missing** | `submitChange`, kill switch and approvals trust the caller | AuthN/Z, approver identity, separation of duties (author != approver), multi-party approval, signed decisions |
-| Agent isolation | **Missing** | agents run in-process; cancel = thread interrupt | Sandboxed execution (container/VM), resource and network limits, handling of agents that ignore interrupts |
-| Real agents | **Partial** | deterministic, rule-based role agents (requirements, design, development, code review, QA, release) producing real evidence from this repository | LLM-backed agents: prompt/version management, token and cost budgets, output schema validation, evaluation harness |
-| Requirement analysis | **Partial** | keyword rules, tested | Not language understanding; needs an LLM or human-curated templates behind the same interface |
+| Agent isolation | **Partial** | `agentic-sdlc`: each run in its own git worktree, path guard, write scope from the approved plan; otherwise agents run in-process and cancel = thread interrupt | Sandboxed execution (container/VM), resource and network limits, handling of agents that ignore interrupts |
+| Real agents | **Partial** | deterministic role agents producing real evidence from this repository; Claude agents in `agentic-sdlc` (analysis, planning, implementation, repair, review, docs) with schema-validated outputs, bounded turns, a per-run cost cap, call ledger and redacted transcripts, tested with scripted model turns | No live end-to-end LLM run has completed yet (recorded attempts: API 400 at the first call); no evaluation harness or prompt versioning; a non-retryable API error still uses the stage's second attempt |
+| Requirement analysis | **Partial** | keyword rules in `orchestrator`; LLM analyst plus mandatory human clarification of every ambiguity in `agentic-sdlc` | LLM path not yet proven on a live run |
 | Policies | **Partial** | secrets, protected paths, required evidence | Regex scanners miss obfuscation; need real SAST/secret scanners and licence/dependency checks |
 
 ## B. URL shortener service

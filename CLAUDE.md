@@ -10,6 +10,7 @@ Java 21 / Spring Boot 3.3 multi-module Maven project with two decoupled parts an
 - **URL shortener** (module `shortener-service`, `com.ascs.shortener` + `AscsApplication`): the reference system the orchestrator plans and changes, an independent microservice. Hexagonal: `domain` / `app` / `infra` / `web`.
 - **Generated client** (module `shortener-client`): `com.ascs.contract.shortener.*`, generated at build time from `shortener-api` by openapi-generator (`native` library); never hand-edit or check in generated code.
 - **Tool adapters** (module `orchestrator-tools`, `com.ascs.orchestrator.tools.shortener`): expose shortener operations as gateway tools over the generated client; also builds `*-exec.jar` running `ToolGatewayDemo`.
+- **LLM agents** (module `agentic-sdlc`, `com.ascs.agentic`): Claude agents (Anthropic Java SDK) on the orchestrator engine. Discovery graph (analyze -> human clarify -> plan [approval]) then a delivery graph compiled from the approved plan (`pipeline/Graphs.java`). Runs in a git worktree on `agentic/<runId>`; records under `.agentic/runs/`. Run with `./scripts/run-agentic.sh` (needs `ANTHROPIC_API_KEY`); tests use `ScriptedProvider` and need no key. See `docs/AGENTIC_SETUP.md`.
 - **Contract** (module `shortener-api`): `openapi/shortener-v1.yaml`, the shortener's OpenAPI contract. `shortener-service` depends on it and serves it at `/api/v1/openapi.yaml`; `ApiContractTest` fails the build if controllers and contract drift, so an endpoint change means editing the YAML too. Clients (`shortener-client`) are generated from it, never written against service code.
 
 Read `docs/TECHNICAL_DESIGN.md` (complete technical design) and `docs/DESIGN.md` (control flow, concurrency model, requirement-to-code map). `docs/PRODUCTION_READINESS.md` is the honest status of what is built vs. designed.
@@ -67,7 +68,7 @@ The scripts are bash; on Windows run them via Git Bash. Coverage gate (root `pom
 
 ## Known limitations (don't assume otherwise)
 
-The SDLC role agents and the tool-gateway demo planner are deterministic and rule-based (no LLM; `ToolPlanner` is the seam); the scenario agents are stubs; all state is in memory (no durability/resume); control-plane operations are unauthenticated; the Cassandra/Redis tests run only where Docker (or `CASSANDRA_CONTACT_POINTS`/`REDIS_URL`) is available.
+The `orchestrator` role agents and the tool-gateway demo planner are deterministic and rule-based (no LLM; `ToolPlanner` is the seam); the scenario agents are stubs; the `agentic-sdlc` LLM agents have not completed a live end-to-end run yet; all state is in memory (no durability/resume); control-plane operations are unauthenticated; the Cassandra/Redis tests run only where Docker (or `CASSANDRA_CONTACT_POINTS`/`REDIS_URL`) is available.
 
 ## Shortener API
 
