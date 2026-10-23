@@ -29,7 +29,7 @@ delivery:   baseline -> impl-T1 .. impl-Tn (LLM, parallel where the plan allows)
 | impl-T* | `ImplementerAgent` | LLM | Writes only files in its task's write scope (`WriteScope`, derived from the approved plan) |
 | verify | `VerificationAgent` | deterministic | Full real Maven build and tests; fails on any failure or on fewer tests than baseline; fallback `RepairAgent`, then run rollback |
 | review | `ReviewerAgent` | LLM, separate conversation, read-only | Must assess every acceptance criterion with evidence; gate requires APPROVE; fallback `ReviewFixAgent` |
-| docs | `DocsAgent` | LLM | Change documentation |
+| docs | `DocsAgent` | LLM | Writes `docs/changes/<runId>.md`: **user stories** ("As a … I want … so that … (AC-n)") tracing every acceptance criterion, API examples, behaviour, compatibility, testing. Updates `docs/TECHNICAL_DESIGN.md` (its only other writable file), which is **mandatory when the API contract changed**. Both rules are checked deterministically. |
 | security | `SecurityScanAgent` | deterministic | Scans the added lines of the final diff; CRITICAL/HIGH findings stop the run before release |
 | release | `ReleaseReadinessAgent` | human go/no-go | HIGH impact, so the engine refuses to run it without an approval checkpoint |
 | commit | `CommitAgent` | deterministic | Commits on the run branch, with the approvers and the plan hash in the message |
@@ -144,7 +144,7 @@ reliability metrics, model calls), `audit.jsonl`, `metrics.json`, `llm/calls.jso
    git diff HEAD...agentic/<runId>                      # the full change
    ```
 8. **Review and merge (your decision, outside the system).** With pull requests enabled, review the PR on GitHub:
-   its description is the release evidence plus the approvals and run id; CI and reviewers work on it like any PR;
+   its description is the release evidence plus the approvals and run id; the CI workflow (`.github/workflows/ci.yml`: `validate-all.sh`, i.e. all tests, the coverage gate, scenarios and the live service checks) runs on it automatically;
    merge or close it there. Without them, review the branch locally, run `./scripts/validate-all.sh` on it, then
    push it and open a PR yourself (`git push origin agentic/<runId>`) or delete it (`git branch -D agentic/<runId>`).
 
@@ -160,7 +160,7 @@ To try the built-in requirements instead, use `--scenario greenfield | brownfiel
 
 ## Testing
 
-The module's 43 tests run without a key or network: `ScriptedProvider` replays model turns and `FakeGitHub` stands in
+The module's 46 tests run without a key or network: `ScriptedProvider` replays model turns and `FakeGitHub` stands in
 for the GitHub API (pushes go to a local bare repository), so the pipeline, the pull-request hand-off,
 gates, approvals, rollback, write policies, path guard, schema validation, redaction and the error path of the
 provider are tested deterministically (`mvn -pl agentic-sdlc -am test`). Only `doctor` and `run` call the real API.

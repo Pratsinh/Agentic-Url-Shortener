@@ -96,7 +96,8 @@ class PipelineEndToEndTest {
                         "summary", "The change is small, correct and tested.", "findings", List.of(),
                         "criteria", List.of(Map.of("id", "AC-1", "met", true, "evidence", "GreeterTest")))))
                 .on("docs-writer", (s, turn, sent) -> turn == 1
-                        ? ScriptedProvider.call("write_file", Map.of("path", "docs/changes/" + s.runId() + ".md", "content", "# Farewell\n"))
+                        ? ScriptedProvider.call("write_file", Map.of("path", "docs/changes/" + s.runId() + ".md", "content",
+                        "# Farewell\n\n## User stories\n- As a user, I want a farewell greeting, so that a conversation ends politely (AC-1)\n"))
                         : ScriptedProvider.call("submit_docs", Map.of("summary", "documented the farewell method",
                         "filesWritten", List.of("docs/changes/" + s.runId() + ".md"))));
     }

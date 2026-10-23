@@ -70,7 +70,7 @@ the release evidence; the system can open a PR but has no way to merge one, so f
 ./scripts/run-agentic.sh run --scenario greenfield  # or brownfield | ambiguous | --requirement "TEXT"
 ```
 Setup, configuration, approvals and the honest status (no live end-to-end run has completed yet) are in
-[`docs/AGENTIC_SETUP.md`](docs/AGENTIC_SETUP.md). Its 43 tests run without a key (scripted model turns, a fake GitHub API).
+[`docs/AGENTIC_SETUP.md`](docs/AGENTIC_SETUP.md). Its 46 tests run without a key (scripted model turns, a fake GitHub API).
 
 ## Governed tool gateway: how an agent (LLM) calls the shortener API
 
@@ -106,7 +106,7 @@ The planner is a deterministic stand-in for an LLM; an LLM implementation of `To
 
 ## Run
 
-**Validate everything with one command** (JDK 21+, Maven; Git Bash on Windows):
+**Validate everything with one command** (JDK 21+, Maven; Git Bash on Windows). CI (`.github/workflows/ci.yml`) runs the same script on every pull request and push to `main`:
 ```bash
 ./scripts/validate-all.sh              # tests + coverage gate, agent pipeline, scenarios, then starts the service,
                                       # runs the HTTP smoke test and lets an agent operate it through the tool gateway
@@ -189,7 +189,7 @@ gateways. Concurrency tests use real threads and latches. Tests declare the acce
 `@Verifies("AC-n.m")`; the QA agent turns those declarations into the functional-coverage matrix.
 
 Coverage: 198 tests (128 orchestrator, 13 orchestrator-tools, 57 shortener-service of which 8 need Docker); outside the Docker-only driver adapters, 99.9% of lines and branches and 100% of methods. The
-remaining gaps are explained in `docs/CODE_REVIEW.md`. `agentic-sdlc` adds 43 tests that replay scripted model turns
+remaining gaps are explained in `docs/CODE_REVIEW.md`. `agentic-sdlc` adds 46 tests that replay scripted model turns
 (no key, no network); it is not under the coverage gate.
 
 ## Limitations

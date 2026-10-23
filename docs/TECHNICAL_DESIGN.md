@@ -647,7 +647,7 @@ outside the driver adapters; 37 of 39 acceptance criteria verified by passing te
 
 | Area | Gap | Proposed next step |
 |---|---|---|
-| Verification | The Cassandra/Redis path runs only where Docker is available | Add CI with Docker so the storage tests always run |
+| Verification | Docker-backed storage tests run in CI (GitHub-hosted runners have Docker) but are skipped on machines without it | Run them against a shared staging Cassandra/Redis too |
 | AI | `agentic-sdlc` LLM agents not yet proven by a completed live run; the tool-gateway planner is rule-based | Complete live greenfield/brownfield/ambiguous runs; an evaluation harness; an LLM `ToolPlanner` |
 | Tools | Mutating calls are not idempotent, so never retried | `Idempotency-Key` header in the contract and the service; the gateway derives it from the correlation id |
 | Tools | Gateway is in-process, service calls unauthenticated | Service credentials held by the gateway only (OAuth client credentials), scopes per tool |

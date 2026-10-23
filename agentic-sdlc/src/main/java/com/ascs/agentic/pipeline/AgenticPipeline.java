@@ -166,11 +166,11 @@ public final class AgenticPipeline {
             }
             scopes.put(RepairAgent.TOOL_STAGE, ctx.unionScope());
             scopes.put(ReviewFixAgent.TOOL_STAGE, ctx.unionScope());
-            scopes.put("docs", new WriteScope(Set.of(DocsAgent.docPath(runId)), Set.of(), List.of()));
+            scopes.put("docs", new WriteScope(Set.of(DocsAgent.docPath(runId), DocsAgent.DESIGN_DOC), Set.of(), List.of()));
             grants.put(RepairAgent.TOOL_STAGE, all);
             grants.put(ReviewFixAgent.TOOL_STAGE, all);
             grants.put("review", WorkspaceTools.READ_TOOLS);
-            grants.put("docs", List.of(WorkspaceTools.LIST, WorkspaceTools.READ, WorkspaceTools.SEARCH, WorkspaceTools.WRITE));
+            grants.put("docs", List.of(WorkspaceTools.LIST, WorkspaceTools.READ, WorkspaceTools.SEARCH, WorkspaceTools.WRITE, WorkspaceTools.REPLACE));
             ToolGateway gw2 = gateway(audit, approvals, tools, writePolicy, grants);
             AgentKit kit2 = new AgentKit(config, new AgentLoop(llm, gw2, config.maxLlmTurns(), 3), ws, build, audit, human, ledger);
             Map<String, Agent> a2 = new HashMap<>();
