@@ -35,6 +35,7 @@ final class RunReportWriter {
         StringBuilder md = new StringBuilder("# Agentic SDLC run `").append(r.runId()).append("` (").append(label).append(")\n\n");
         md.append("**Status:** ").append(r.status()).append("  \n**End-to-end latency:** ").append(fmt(latency))
                 .append("  \n**Branch:** `").append(r.branch()).append("`").append(r.commit() == null ? "" : "  \n**Commit:** `" + r.commit() + "`")
+                .append(r.pullRequest() == null ? "" : "  \n**Pull request (human review and merge):** " + r.pullRequest())
                 .append("\n\n## Requirement\n> ").append(requirement.replace("\n", "\n> ")).append("\n\n");
 
         LlmLedger.Snapshot llm = ledger.snapshot();

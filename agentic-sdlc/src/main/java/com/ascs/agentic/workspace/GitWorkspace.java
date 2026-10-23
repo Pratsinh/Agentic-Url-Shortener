@@ -86,6 +86,36 @@ public final class GitWorkspace {
         return git(root, "rev-parse", "HEAD").strip();
     }
 
+    /** URL of a configured remote of the repository. */
+    public String remoteUrl(String remote) throws IOException, InterruptedException {
+        return git(repoRoot, "remote", "get-url", checkRemote(remote)).strip();
+    }
+
+    /**
+     * Pushes the run branch (only it, to the same name) to a remote. With a token, HTTPS authentication uses an inline
+     * credential helper that reads the token from an environment variable of the git process only: the token is never
+     * on a command line, and any configured helper (which could prompt) is bypassed. Without one, git's own
+     * configuration (SSH keys, credential manager) applies; prompts are disabled either way.
+     */
+    public synchronized void push(String remote, String token) throws IOException, InterruptedException {
+        List<String> cmd = new ArrayList<>();
+        if (token != null && !token.isBlank()) {
+            cmd.addAll(List.of("-c", "credential.helper=",
+                    "-c", "credential.helper=!f() { echo username=x-access-token; echo \"password=$" + PUSH_TOKEN_ENV + "\"; }; f"));
+        }
+        cmd.addAll(List.of("push", "-q", checkRemote(remote), branch + ":refs/heads/" + branch));
+        Map<String, String> env = token == null || token.isBlank() ? Map.of("GIT_TERMINAL_PROMPT", "0")
+                : Map.of("GIT_TERMINAL_PROMPT", "0", PUSH_TOKEN_ENV, token);
+        run(repoRoot, env, cmd.toArray(String[]::new));
+    }
+
+    static final String PUSH_TOKEN_ENV = "AGENTIC_PUSH_TOKEN";
+
+    private static String checkRemote(String remote) {
+        if (remote == null || !remote.matches("[A-Za-z0-9._-]{1,64}")) throw new IllegalArgumentException("invalid remote name");
+        return remote;
+    }
+
     /** Compensation: discards every change and commit on the run branch (the base commit is restored). */
     public synchronized void resetToBase() throws IOException, InterruptedException {
         git(root, "reset", "--hard", "-q", baseCommit);
@@ -108,10 +138,14 @@ public final class GitWorkspace {
     }
 
     static String git(Path dir, String... args) throws IOException, InterruptedException {
+        return run(dir, Map.of("GIT_TERMINAL_PROMPT", "0"), args);
+    }
+
+    private static String run(Path dir, Map<String, String> env, String... args) throws IOException, InterruptedException {
         List<String> cmd = new ArrayList<>();
         cmd.add("git");
         cmd.addAll(List.of(args));
-        Commands.Result r = Commands.run(cmd, dir, GIT_TIMEOUT, Map.of("GIT_TERMINAL_PROMPT", "0"));
+        Commands.Result r = Commands.run(cmd, dir, GIT_TIMEOUT, env);
         if (!r.ok()) throw new IOException("git " + args[0] + " failed (exit " + r.exitCode() + "): " + r.output().strip());
         return r.output();
     }

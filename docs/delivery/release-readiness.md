@@ -8,7 +8,7 @@
 
 | Measure | Result | Target | Met |
 |---|---|---|---|
-| Unit tests | 237 tests in 41 classes | - | - |
+| Unit tests | 244 tests in 42 classes | - | - |
 | Line coverage | 99.8% (2607/2611) | 100% | **no** |
 | Branch coverage | 99.8% (1228/1231) | 100% | **no** |
 | Method coverage | 100.0% (647/647) | 100% | yes |

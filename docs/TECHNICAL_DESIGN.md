@@ -110,7 +110,7 @@ flowchart TB
         cli["AgenticCli / run-agentic.sh"]
         pipe["AgenticPipeline: discovery graph, then delivery graph compiled from the approved plan"]
         llmAgents["LLM agents: analyst, planner, implementers, repair, reviewer, review-fix, docs"]
-        detAgents["Deterministic agents: clarification, verification (real mvn), security scan, release, commit"]
+        detAgents["Deterministic agents: clarification, verification (real mvn), security scan, release, commit, pull request"]
         loop["AgentLoop: tool use + strict schema-validated submit"]
         prov["RecordingProvider: call ledger, cost cap, redacted transcripts"]
         hg["HumanApprovalGateway: console or file inbox, separation of duties"]
@@ -149,6 +149,9 @@ flowchart TB
     api -.->|"contract"| svc & client
     svc --> data
     pipe -.->|"summary, audit.jsonl, plan, diff"| human
+    github[("GitHub: pull request")]
+    detAgents -->|"push branch, open PR"| github
+    human -->|"reviews and merges"| github
 ```
 
 ### 4.1 Module decomposition

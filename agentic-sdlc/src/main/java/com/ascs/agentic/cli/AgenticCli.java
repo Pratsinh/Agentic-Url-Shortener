@@ -10,6 +10,7 @@ import com.ascs.agentic.llm.Llm;
 import com.ascs.agentic.llm.LlmLedger;
 import com.ascs.agentic.llm.RecordingProvider;
 import com.ascs.agentic.llm.Redactor;
+import com.ascs.agentic.vcs.PullRequests;
 import com.ascs.agentic.pipeline.AgenticPipeline;
 import com.ascs.agentic.pipeline.RunRecorder;
 import com.ascs.agentic.workspace.Commands;
@@ -96,11 +97,12 @@ public final class AgenticCli {
                 : inbox -> new FileHumanChannel(inbox, config.approvalTimeout(), Duration.ofSeconds(2));
         AgenticPipeline pipeline = new AgenticPipeline(config, AnthropicProvider.fromEnv(config.refusalFallback()),
                 new MavenBuildRunner(config.mavenCommand(), Set.of(config.verifyModule()), config.buildTimeout()),
-                human, Clock.systemUTC(), Redactor.fromProcessEnv());
+                human, Clock.systemUTC(), Redactor.fromProcessEnv(), PullRequests.fromEnv(System.getenv()));
         System.out.println("run " + runId + " (" + label + "), model " + config.model() + ", approvals via " + mode
                 + "\nrecord: " + config.runsDir().resolve(runId));
         AgenticPipeline.Result r = pipeline.run(runId, requirement, label);
         System.out.println("\nstatus: " + r.status() + "\nbranch: " + r.branch() + (r.commit() == null ? "" : "\ncommit: " + r.commit())
+                + (r.pullRequest() == null ? "" : "\npull request (review and merge it there): " + r.pullRequest())
                 + "\nreport: " + r.runDir().resolve("summary.md"));
         return r.status().equals("DELIVERED") ? 0 : 1;
     }
@@ -122,6 +124,14 @@ public final class AgenticCli {
         }
         System.out.println("model: " + config.model() + " (review: " + config.reviewModel() + "), effort " + config.effort()
                 + ", refusal fallback " + (config.refusalFallback() ? "on" : "off"));
+        try {
+            PullRequests prs = PullRequests.fromEnv(System.getenv());
+            System.out.println("pull requests: " + (prs.enabled() ? "on, remote " + prs.remote() + " -> base " + prs.base()
+                    + ", token " + prs.token() : "off (approved changes stay on the local run branch; AGENTIC_PR=on to enable)"));
+        } catch (IllegalArgumentException e) {
+            System.out.println("pull requests: MISCONFIGURED " + e.getMessage());
+            problems.add("pull request settings");
+        }
         System.out.println("credentials: " + (config.credentialsConfigured() ? "configured (value not shown)" : "MISSING: set ANTHROPIC_API_KEY"));
         if (!config.credentialsConfigured()) {
             problems.add("no model credentials");

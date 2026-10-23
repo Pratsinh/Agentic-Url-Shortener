@@ -1,8 +1,10 @@
 package com.ascs.agentic.pipeline;
 
 import com.ascs.agentic.agents.ClarificationAgent;
+import com.ascs.agentic.agents.CommitAgent;
 import com.ascs.agentic.agents.ImplementerAgent;
 import com.ascs.agentic.agents.PlannerAgent;
+import com.ascs.agentic.agents.PullRequestAgent;
 import com.ascs.agentic.agents.ReleaseReadinessAgent;
 import com.ascs.agentic.agents.RequirementAnalystAgent;
 import com.ascs.agentic.agents.ReviewerAgent;
@@ -31,7 +33,7 @@ import java.util.function.Function;
  * <pre>
  * discovery:  analyze -> clarify -> plan[approval]
  * delivery:   baseline -> impl-T* (plan DAG, parallel where independent) -> verify(fallback repair, rollback on failure)
- *             -> { review(fallback review-fix) || docs } -> security -> release[HIGH, approval] -> commit
+ *             -> { review(fallback review-fix) || docs } -> security -> release[HIGH, approval] -> commit -> pull-request (human review and merge on GitHub)
  * </pre>
  */
 public final class Graphs {
@@ -85,6 +87,11 @@ public final class Graphs {
         stages.add(StageDefinition.builder("commit").describe("Commit the approved change on the run branch").dependsOn("release")
                 .entryGate(Gate.requireArtifacts(ReleaseReadinessAgent.MD)).rollback(resetWorkspace).impact(Impact.MEDIUM)
                 .exitGate(Gate.requireOutputs("commit.json")).build());
+        // hand-off to human review: never rolls back the approved commit (default BLOCK_DESCENDANTS, no descendants)
+        stages.add(StageDefinition.builder("pull-request").describe("Push the run branch and open a pull request for human review")
+                .dependsOn("commit").entryGate(Gate.requireArtifacts(CommitAgent.JSON, ReleaseReadinessAgent.MD))
+                .retry(RetryPolicy.of(2, Duration.ofSeconds(10))).impact(Impact.MEDIUM)
+                .exitGate(Gate.requireOutputs(PullRequestAgent.JSON)).build());
         return new WorkflowGraph(stages);
     }
 

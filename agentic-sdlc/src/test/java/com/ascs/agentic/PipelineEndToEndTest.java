@@ -7,6 +7,7 @@ import com.ascs.agentic.llm.Llm;
 import com.ascs.agentic.llm.Redactor;
 import com.ascs.agentic.pipeline.AgenticPipeline;
 import com.ascs.agentic.pipeline.RunRecorder;
+import com.ascs.agentic.vcs.PullRequests;
 import com.ascs.agentic.workspace.BuildRunner;
 import com.ascs.agentic.workspace.TestReport;
 import com.ascs.orchestrator.model.StageResult;
@@ -147,6 +148,8 @@ class PipelineEndToEndTest {
         assertFalse(Files.readString(repo.resolve(GREETER)).contains("farewell"), "the main checkout is untouched");
         assertFalse(Files.exists(repo.resolve(".agentic/worktrees/e2e-ok")), "worktree removed, branch kept");
         assertEquals(List.of("approve-plan", "approve-release"), asked.stream().map(a -> a.replaceAll("-\\d+$", "")).toList());
+        assertNull(r.pullRequest(), "pull requests are opt-in");
+        assertTrue(Files.readString(r.runDir().resolve("artifacts/pull-request/pull-request.v1.json")).contains("\"status\" : \"SKIPPED\""));
 
         Path run = r.runDir();
         assertTrue(RunRecorder.verifyPersistedAudit(run.resolve("audit.jsonl")), "the persisted audit chain verifies");
@@ -170,8 +173,63 @@ class PipelineEndToEndTest {
 
         assertEquals("REJECTED_AT_RELEASE", r.status());
         assertEquals(StageStatus.BLOCKED, status(r, "commit"));
+        assertEquals(StageStatus.BLOCKED, status(r, "pull-request"), "nothing is pushed without a release approval");
         assertFalse(TestRepo.git(repo, "branch", "--list").contains("agentic/e2e-rej"), "the run branch is gone");
         assertTrue(Files.readString(r.runDir().resolve("audit.jsonl")).contains("ROLLBACK_COMPLETED"));
+    }
+
+    /** A bare repository as the "origin" remote, so pushes are real but stay local. */
+    Path bareOrigin() throws Exception {
+        Path remote = tmp.resolve("origin.git");
+        TestRepo.git(tmp, "init", "-q", "--bare", remote.toString());
+        TestRepo.git(repo, "remote", "add", "origin", remote.toString());
+        return remote;
+    }
+
+    AgenticPipeline pipeline(ScriptedProvider p, HumanChannel h, PullRequests prs) {
+        return new AgenticPipeline(config(), p, BUILD, inbox -> h, Clock.systemUTC(), new Redactor(Map.of()), prs);
+    }
+
+    @Test
+    void anApprovedChangeIsPushedAndOpenedAsAPullRequestForHumanReview() throws Exception {
+        Path origin = bareOrigin();
+        try (FakeGitHub gh = new FakeGitHub(req -> new FakeGitHub.Response(201, "{\"number\":12,\"html_url\":\"https://github.com/o/r/pull/12\"}"))) {
+            PullRequests prs = new PullRequests(true, "origin", "main", "o/r", gh.uri(), new PullRequests.Secret(PullRequestsTest.TOKEN));
+            AgenticPipeline.Result r = pipeline(model(false, PipelineEndToEndTest::goodImplementer),
+                    human("pat", id -> HumanChannel.Verdict.APPROVE, ""), prs).run("e2e-pr", "Add a farewell greeting", "test");
+
+            assertEquals("DELIVERED", r.status());
+            assertEquals("https://github.com/o/r/pull/12", r.pullRequest());
+            assertEquals(r.commit(), TestRepo.git(origin, "rev-parse", "agentic/e2e-pr").strip(), "the approved commit was pushed");
+            assertEquals(1, gh.requests.size(), "exactly one pull request, opened after the commit");
+            JsonNode body = Json.parse(gh.requests.get(0).body());
+            assertEquals("agentic/e2e-pr", body.path("head").asText());
+            assertEquals("feat: add farewell greeting", body.path("title").asText());
+            String description = body.path("body").asText();
+            assertTrue(description.contains("# Release readiness") && description.contains("Approved: release: approver=pat"), description);
+            assertTrue(description.contains("merging is your decision"), description);
+            String audit = Files.readString(r.runDir().resolve("audit.jsonl"));
+            assertTrue(audit.contains("opened pull request #12"), "the hand-off is audited");
+            assertFalse(audit.contains(PullRequestsTest.TOKEN) || description.contains(PullRequestsTest.TOKEN), "the token never leaks");
+            assertTrue(Files.readString(r.runDir().resolve("summary.md")).contains("**Pull request (human review and merge):** https://github.com/o/r/pull/12"));
+        }
+    }
+
+    @Test
+    void aFailedPullRequestKeepsTheApprovedCommit() throws Exception {
+        bareOrigin();
+        try (FakeGitHub gh = new FakeGitHub(req -> new FakeGitHub.Response(500, "{\"message\":\"Server Error\"}"))) {
+            PullRequests prs = new PullRequests(true, "origin", "main", "o/r", gh.uri(), new PullRequests.Secret(PullRequestsTest.TOKEN));
+            AgenticPipeline.Result r = pipeline(model(false, PipelineEndToEndTest::goodImplementer),
+                    human("pat", id -> HumanChannel.Verdict.APPROVE, ""), prs).run("e2e-prf", "Add a farewell greeting", "test");
+
+            assertEquals("DELIVERED_PR_FAILED", r.status());
+            assertEquals(StageStatus.FAILED, status(r, "pull-request"));
+            assertEquals(2, gh.requests.size(), "the hand-off is retried once (bounded)");
+            assertNotNull(r.commit());
+            assertEquals(r.commit(), TestRepo.git(repo, "rev-parse", "agentic/e2e-prf").strip(), "the approved commit is not rolled back");
+            assertNull(r.pullRequest());
+        }
     }
 
     @Test

@@ -7,6 +7,7 @@ import com.ascs.agentic.agents.DeliveryContext;
 import com.ascs.agentic.agents.DocsAgent;
 import com.ascs.agentic.agents.ImplementerAgent;
 import com.ascs.agentic.agents.PlannerAgent;
+import com.ascs.agentic.agents.PullRequestAgent;
 import com.ascs.agentic.agents.ReleaseReadinessAgent;
 import com.ascs.agentic.agents.RepairAgent;
 import com.ascs.agentic.agents.RequirementAnalystAgent;
@@ -25,6 +26,7 @@ import com.ascs.agentic.llm.Redactor;
 import com.ascs.agentic.loop.AgentLoop;
 import com.ascs.agentic.model.Models;
 import com.ascs.agentic.tools.WorkspaceTools;
+import com.ascs.agentic.vcs.PullRequests;
 import com.ascs.agentic.tools.WorkspaceWritePolicy;
 import com.ascs.agentic.tools.WriteScope;
 import com.ascs.agentic.workspace.BuildRunner;
@@ -64,14 +66,14 @@ import java.util.function.Function;
 /**
  * Runs one requirement end to end: an isolated workspace, the discovery workflow (analysis, clarification, plan
  * with human approval), then the delivery workflow compiled from the approved plan (implementation, verification,
- * review, docs, security, human release approval, commit). Both phases share one audit log, artifact store,
+ * review, docs, security, human release approval, commit, pull request for human review). Both phases share one audit log, artifact store,
  * metrics and model ledger, all persisted under {@code .agentic/runs/<runId>}.
  */
 public final class AgenticPipeline {
 
     /** What a run produced (also written to {@code state.json}). */
     public record Result(String runId, String status, RunReport discovery, RunReport delivery, Path runDir,
-                         String branch, String commit) {}
+                         String branch, String commit, String pullRequest) {}
 
     private final AgenticConfig config;
     private final Llm.Provider provider;
@@ -79,16 +81,24 @@ public final class AgenticPipeline {
     private final Function<Path, HumanChannel> humanFactory;
     private final Clock clock;
     private final Redactor redactor;
+    private final PullRequests pullRequests;
 
     /** @param humanFactory creates the human channel for a run, given the run's inbox directory */
     public AgenticPipeline(AgenticConfig config, Llm.Provider provider, BuildRunner build,
                            Function<Path, HumanChannel> humanFactory, Clock clock, Redactor redactor) {
+        this(config, provider, build, humanFactory, clock, redactor, PullRequests.disabled());
+    }
+
+    /** @param pullRequests where an approved change is handed to human review (disabled: it stays on the local branch) */
+    public AgenticPipeline(AgenticConfig config, Llm.Provider provider, BuildRunner build,
+                           Function<Path, HumanChannel> humanFactory, Clock clock, Redactor redactor, PullRequests pullRequests) {
         this.config = config;
         this.provider = provider;
         this.build = build;
         this.humanFactory = humanFactory;
         this.clock = clock;
         this.redactor = redactor;
+        this.pullRequests = pullRequests;
     }
 
     public Result run(String runId, String requirement, String label) throws Exception {
@@ -124,7 +134,7 @@ public final class AgenticPipeline {
                 .withApprovalTimeout(config.approvalTimeout()).withRollbackTimeout(Duration.ofMinutes(2));
         ExecutorService pool = Executors.newFixedThreadPool(config.maxParallel());
         RunReport discovery = null, delivery = null;
-        String status, commit = null;
+        String status, commit = null, pullRequest = null;
         try {
             // ---------------------------------------------------------------- discovery
             ToolGateway gw1 = gateway(audit, approvals, tools, writePolicy, Map.of(
@@ -142,7 +152,7 @@ public final class AgenticPipeline {
                 status = "STOPPED_IN_DISCOVERY_" + discovery.outcome();
                 ws.discard();
                 audit.append(runId, null, AuditLog.Type.WORKSPACE_CHANGED, "worktree and branch discarded (nothing was implemented)");
-                return finish(rec, audit, store, metrics, ledger, runId, label, requirement, status, discovery, null, ws, null, start);
+                return finish(rec, audit, store, metrics, ledger, runId, label, requirement, status, discovery, null, ws, null, null, start);
             }
 
             // ---------------------------------------------------------------- delivery (compiled from the approved plan)
@@ -175,6 +185,7 @@ public final class AgenticPipeline {
             a2.put("security", new SecurityScanAgent(kit2));
             a2.put("release", new ReleaseReadinessAgent(kit2, ctx));
             a2.put("commit", new CommitAgent(kit2, ctx));
+            a2.put("pull-request", new PullRequestAgent(kit2, pullRequests, redactor));
             WorkflowGraph g2 = Graphs.delivery(ctx.plan(), rb -> ws.resetToBase());
             audit.append(runId, null, AuditLog.Type.PHASE_STARTED, "delivery compiled from " + ctx.planArtifact().ref()
                     + " waves=" + g2.levels());
@@ -183,11 +194,13 @@ public final class AgenticPipeline {
             delivery = e2.run(runId, requirement);
             audit.append(runId, null, AuditLog.Type.PHASE_COMPLETED, "delivery outcome=" + delivery.outcome() + " replans=" + delivery.replans());
 
-            if (delivery.success()) {
+            if (delivery.status("commit") == StageStatus.SUCCEEDED) {
                 commit = Json.parse(store.latest(CommitAgent.JSON).orElseThrow().content()).path("commit").asText();
+                pullRequest = store.latest(PullRequestAgent.JSON).map(a -> Json.parse(a.content()).path("url").asText(null)).orElse(null);
                 ws.removeWorktree();
                 audit.append(runId, null, AuditLog.Type.WORKSPACE_CHANGED, "worktree removed; approved commit " + commit + " kept on " + ws.branch());
-                status = "DELIVERED";
+                // a failed hand-off never discards the approved commit: the branch can still be pushed and reviewed by hand
+                status = delivery.success() ? "DELIVERED" : "DELIVERED_PR_FAILED";
             } else if (delivery.status("release") == StageStatus.REJECTED) {
                 audit.append(runId, "release", AuditLog.Type.ROLLBACK_STARTED, "release rejected by a human: discarding the change");
                 metrics.rollback();
@@ -202,7 +215,7 @@ public final class AgenticPipeline {
                 status = "STOPPED_IN_DELIVERY_" + delivery.outcome();
                 audit.append(runId, null, AuditLog.Type.WORKSPACE_CHANGED, "worktree kept for inspection at " + ws.root());
             }
-            return finish(rec, audit, store, metrics, ledger, runId, label, requirement, status, discovery, delivery, ws, commit, start);
+            return finish(rec, audit, store, metrics, ledger, runId, label, requirement, status, discovery, delivery, ws, commit, pullRequest, start);
         } finally {
             pool.shutdownNow();
         }
@@ -234,10 +247,10 @@ public final class AgenticPipeline {
 
     private Result finish(RunRecorder rec, AuditLog audit, ArtifactStore store, Metrics metrics, LlmLedger ledger, String runId,
                           String label, String requirement, String status, RunReport discovery, RunReport delivery,
-                          GitWorkspace ws, String commit, Instant start) {
+                          GitWorkspace ws, String commit, String pullRequest, Instant start) {
         Duration latency = Duration.between(start, clock.instant());
         audit.append(runId, null, AuditLog.Type.RUN_COMPLETED, "pipeline status=" + status + " latencyMs=" + latency.toMillis());
-        Result result = new Result(runId, status, discovery, delivery, rec.dir(), ws.branch(), commit);
+        Result result = new Result(runId, status, discovery, delivery, rec.dir(), ws.branch(), commit, pullRequest);
         Map<String, Object> state = new LinkedHashMap<>();
         state.put("runId", runId);
         state.put("label", label);
@@ -247,6 +260,7 @@ public final class AgenticPipeline {
         state.put("delivery", delivery);
         state.put("workspace", Map.of("branch", ws.branch(), "baseCommit", ws.baseCommit(), "path", ws.root().toString()));
         state.put("commit", commit == null ? "" : commit);
+        state.put("pullRequest", pullRequest == null ? "" : pullRequest);
         state.put("provider", provider.name());
         rec.write("state.json", Json.pretty(state));
         rec.write("metrics.json", Json.pretty(Map.of("engine", metrics.snapshot(), "llm", ledger.snapshot(),

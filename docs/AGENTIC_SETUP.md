@@ -17,6 +17,7 @@ discovery:  analyze (LLM) -> clarify (human) -> plan (LLM) [human approval]
 delivery:   baseline -> impl-T1 .. impl-Tn (LLM, parallel where the plan allows) -> verify (fallback: repair, LLM)
             -> { review (LLM, read-only; fallback: review-fix) || docs (LLM) } -> security (deterministic)
             -> release [HIGH impact, human approval] -> commit (on branch agentic/<runId>)
+            -> pull-request (push + open PR; a human reviews and merges on GitHub)
 ```
 
 | Stage | Agent | Kind | Control |
@@ -31,7 +32,8 @@ delivery:   baseline -> impl-T1 .. impl-Tn (LLM, parallel where the plan allows)
 | docs | `DocsAgent` | LLM | Change documentation |
 | security | `SecurityScanAgent` | deterministic | Scans the added lines of the final diff; CRITICAL/HIGH findings stop the run before release |
 | release | `ReleaseReadinessAgent` | human go/no-go | HIGH impact, so the engine refuses to run it without an approval checkpoint |
-| commit | `CommitAgent` | deterministic | Commits on the run branch; merging stays a human decision outside the system |
+| commit | `CommitAgent` | deterministic | Commits on the run branch, with the approvers and the plan hash in the message |
+| pull-request | `PullRequestAgent` | deterministic | Opt-in. Re-checks the release approval, pushes only the run branch, opens a PR whose description is the release evidence. Retried once; a failure never undoes the commit (`DELIVERED_PR_FAILED`). It has no merge operation: merging is a human decision on GitHub |
 
 ### Autonomy boundaries
 
@@ -78,6 +80,21 @@ by: <your name>
 <comment, feedback or answers>
 ```
 
+**Pull requests (optional).** To have each approved run open a PR for review instead of only committing locally:
+
+```bash
+export AGENTIC_PR=on
+export GITHUB_TOKEN=...                 # fine-grained token: this repository only, Contents + Pull requests: read and write
+export AGENTIC_PR_BASE=main             # optional: target branch (default main)
+export AGENTIC_PR_REMOTE=origin         # optional: remote to push to (default origin)
+export AGENTIC_PR_REPO=owner/name       # optional: otherwise parsed from the remote's GitHub URL
+./scripts/run-agentic.sh doctor         # shows "pull requests: on, remote origin -> base main, token (set)"
+```
+The token is held only by the pull-request component: it is not in the configuration or run record, is scrubbed from
+every child process except the one `git push` (which reads it through an inline credential helper, never from the
+command line), and is redacted from errors, the audit log and the PR description. `AGENTIC_GITHUB_API` points at
+GitHub Enterprise if needed.
+
 Configuration (environment): `AGENTIC_MODEL` (the script defaults it to `claude-sonnet-5-5`; the CLI's own default is
 `claude-opus-5-5`), `AGENTIC_REVIEW_MODEL`, `AGENTIC_EFFORT` (default `high`), `AGENTIC_MAX_TOKENS` (16000),
 `AGENTIC_MAX_RUN_USD` (40), `AGENTIC_MAX_LLM_TURNS` (60), `AGENTIC_MAX_PARALLEL` (2), `AGENTIC_STAGE_TIMEOUT_MINUTES`
@@ -115,8 +132,9 @@ reliability metrics, model calls), `audit.jsonl`, `metrics.json`, `llm/calls.jso
    suite (a failure goes to the repair agent once, otherwise the run rolls back), independent review and docs, then
    the security scan. Progress is visible in `.agentic/runs/<runId>/audit.jsonl`.
 6. **Release go/no-go** (`release` stage, HIGH impact). You see the diff summary, test results against the baseline,
-   the review verdict per acceptance criterion and the security findings. `approve` commits on `agentic/<runId>`;
-   `reject` discards the worktree and the branch.
+   the review verdict per acceptance criterion and the security findings. `approve` commits on `agentic/<runId>`
+   and, with pull requests enabled, pushes the branch and opens a PR (the run prints its URL); `reject` discards the
+   worktree and the branch, and nothing is pushed.
 7. **Inspect the evidence.**
    ```bash
    cat .agentic/runs/<runId>/summary.md                 # stages, human decisions, governance events, metrics, model calls
@@ -125,10 +143,13 @@ reliability metrics, model calls), `audit.jsonl`, `metrics.json`, `llm/calls.jso
    git log -1 --stat agentic/<runId>                    # the approved commit
    git diff HEAD...agentic/<runId>                      # the full change
    ```
-8. **Merge (your decision, outside the system).** Review the branch like any pull request, run
-   `./scripts/validate-all.sh` on it, then merge or delete it: `git branch -D agentic/<runId>`.
+8. **Review and merge (your decision, outside the system).** With pull requests enabled, review the PR on GitHub:
+   its description is the release evidence plus the approvals and run id; CI and reviewers work on it like any PR;
+   merge or close it there. Without them, review the branch locally, run `./scripts/validate-all.sh` on it, then
+   push it and open a PR yourself (`git push origin agentic/<runId>`) or delete it (`git branch -D agentic/<runId>`).
 
-Final status printed by the run: `DELIVERED` (commit on the branch), `REJECTED_AT_RELEASE`, `ROLLED_BACK`
+Final status printed by the run: `DELIVERED` (commit on the branch, and the PR when enabled), `DELIVERED_PR_FAILED`
+(approved commit kept on the local branch; push or PR creation failed, see `summary.md`), `REJECTED_AT_RELEASE`, `ROLLED_BACK`
 (verification failed even after repair; branch discarded), `STOPPED_IN_DISCOVERY_<outcome>` (e.g. clarification or
 plan rejected, or a model call failed; nothing implemented) or `STOPPED_IN_DELIVERY_<outcome>` (e.g. a security
 finding safe-stopped the run). Each outcome is a governed result, not a crash; `summary.md` says why.
@@ -139,7 +160,8 @@ To try the built-in requirements instead, use `--scenario greenfield | brownfiel
 
 ## Testing
 
-The module's 36 tests run without a key or network: `ScriptedProvider` replays model turns, so the pipeline,
+The module's 43 tests run without a key or network: `ScriptedProvider` replays model turns and `FakeGitHub` stands in
+for the GitHub API (pushes go to a local bare repository), so the pipeline, the pull-request hand-off,
 gates, approvals, rollback, write policies, path guard, schema validation, redaction and the error path of the
 provider are tested deterministically (`mvn -pl agentic-sdlc -am test`). Only `doctor` and `run` call the real API.
 

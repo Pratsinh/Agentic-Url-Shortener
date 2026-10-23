@@ -64,7 +64,8 @@ public final class ReleaseReadinessAgent implements Agent {
         }
         md.append("\n## Change\n```\n").append(diffStat).append("```\n\n```diff\n")
                 .append(AgentKit.truncate(kit.workspace().diff(), 30_000)).append("\n```\n");
-        md.append("\nApproving commits this change to `").append(kit.workspace().branch()).append("`. Merging into the main branch remains a separate human decision.\n");
+        md.append("\nApproving commits this change to `").append(kit.workspace().branch()).append("` and, when pull requests are enabled,")
+                .append(" pushes that branch and opens a pull request for review. Merging remains a separate human decision.\n");
         return new AgentResult(Map.of(MD, md.toString()), "release evidence assembled: review " + review.verdict() + ", "
                 + tests.path("tests").asInt() + " tests passing, security blocking=" + security.path("blocking").asInt());
     }

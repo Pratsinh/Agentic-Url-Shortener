@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Run the LLM-driven agentic SDLC (module agentic-sdlc): requirement -> analysis -> human clarification -> plan
 # [human approval] -> parallel implementation -> build/test verification -> review || docs -> security scan ->
-# release [human approval] -> commit on an isolated branch. Every model call goes through the governed orchestrator.
+# release [human approval] -> commit on an isolated branch -> (opt-in, AGENTIC_PR=on + GITHUB_TOKEN) push and open a pull
+# request for human review and merge. Every model call goes through the governed orchestrator.
 # Needs JDK 21, Maven, git and ANTHROPIC_API_KEY (read by the Anthropic SDK; never printed or written to the run record).
 # Usage: ./scripts/run-agentic.sh doctor                                  check toolchain + one live model call
 #        ./scripts/run-agentic.sh run --scenario greenfield|brownfield|ambiguous [--approval console|file]
