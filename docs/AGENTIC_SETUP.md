@@ -115,22 +115,25 @@ reliability metrics, model calls), `audit.jsonl`, `metrics.json`, `llm/calls.jso
    ./scripts/run-agentic.sh run --requirement "Add DELETE /api/v1/links/{code} so the owner can remove a link; \
    a deleted code returns 404" --approval console --approver "Your Name"
    ```
-   It prints the run id and its record folder `.agentic/runs/<runId>/`.
+   It prints the run id and its record folder `.agentic/runs/<runId>/`, then one progress line per stage event, e.g.
+   `[06:43:28] verify  done  verify: PASSED: tests=72 failures=0 ...`; `waiting for you` marks a question.
+   Only type when a question is on screen: anything typed earlier is discarded, never taken as a decision.
 3. **Answer the clarification** (`clarify` stage). The analyst lists ambiguities as `AMB-1`, `AMB-2`, ... with a
-   proposed assumption each. Type `answer`, then one line per question, then a line with only `.`:
+   proposed assumption each. Type `accept` to approve all proposed assumptions, or answer each one and finish
+   with a line containing only `.` (the leading `answer` line is optional):
    ```
-   > decision: answer
-   AMB-1: accept
+   > decision: AMB-1: accept
    AMB-2: deleting an expired link also returns 204
    .
    ```
-   `reject` stops the run here. Every ambiguity must be addressed; nothing is assumed silently.
+   `reject` stops the run here. Every ambiguity must be addressed (a missing one is asked again); nothing is assumed
+   silently. Invalid input shows an example.
 4. **Approve the plan** (`plan` stage). You see the design, the task graph (which tasks run in parallel), the files
    each task may change and which task owns each acceptance criterion. Answer `approve`, `reject`, or `revise` with
    feedback: the planner then re-plans with it and asks again.
 5. **Let the delivery run.** No input needed: baseline tests, parallel implementation, the full Maven build and test
    suite (a failure goes to the repair agent once, otherwise the run rolls back), independent review and docs, then
-   the security scan. Progress is visible in `.agentic/runs/<runId>/audit.jsonl`.
+   the security scan. The terminal shows progress lines; full detail is in `.agentic/runs/<runId>/audit.jsonl`.
 6. **Release go/no-go** (`release` stage, HIGH impact). You see the diff summary, test results against the baseline,
    the review verdict per acceptance criterion and the security findings. `approve` commits on `agentic/<runId>`
    and, with pull requests enabled, pushes the branch and opens a PR (the run prints its URL); `reject` discards the
@@ -160,7 +163,7 @@ To try the built-in requirements instead, use `--scenario greenfield | brownfiel
 
 ## Testing
 
-The module's 46 tests run without a key or network: `ScriptedProvider` replays model turns and `FakeGitHub` stands in
+The module's 51 tests run without a key or network: `ScriptedProvider` replays model turns and `FakeGitHub` stands in
 for the GitHub API (pushes go to a local bare repository), so the pipeline, the pull-request hand-off,
 gates, approvals, rollback, write policies, path guard, schema validation, redaction and the error path of the
 provider are tested deterministically (`mvn -pl agentic-sdlc -am test`). Only `doctor` and `run` call the real API.

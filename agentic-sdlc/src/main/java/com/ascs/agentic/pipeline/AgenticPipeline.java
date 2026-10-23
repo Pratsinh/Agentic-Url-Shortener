@@ -51,6 +51,9 @@ import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.util.Locale;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -61,6 +64,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 import java.util.function.Function;
 
 /**
@@ -82,6 +86,7 @@ public final class AgenticPipeline {
     private final Clock clock;
     private final Redactor redactor;
     private final PullRequests pullRequests;
+    private Consumer<String> progress = line -> { };
 
     /** @param humanFactory creates the human channel for a run, given the run's inbox directory */
     public AgenticPipeline(AgenticConfig config, Llm.Provider provider, BuildRunner build,
@@ -101,10 +106,45 @@ public final class AgenticPipeline {
         this.pullRequests = pullRequests;
     }
 
+    /** Live progress for an operator (one line per stage event, from the audit trail, so it never shows secrets). */
+    public AgenticPipeline withProgress(Consumer<String> progress) {
+        this.progress = progress;
+        return this;
+    }
+
+    private static final DateTimeFormatter HHMMSS = DateTimeFormatter.ofPattern("HH:mm:ss").withZone(ZoneId.systemDefault());
+
+    /** The operator-facing line for an audit event, or null for events too fine-grained to show (tool and model calls). */
+    public static String progressLine(AuditLog.Event e) {
+        String what = switch (e.type()) {
+            case PHASE_STARTED -> "phase";
+            case STAGE_STARTED -> "started";
+            case STAGE_SUCCEEDED -> "done";
+            case STAGE_RETRY -> "retry";
+            case STAGE_ATTEMPT_FAILED -> "attempt failed";
+            case FALLBACK_USED -> "fallback";
+            case STAGE_FAILED -> "FAILED";
+            case STAGE_BLOCKED -> "blocked";
+            case POLICY_VIOLATION -> "POLICY";
+            case APPROVAL_REQUESTED -> "waiting for you";
+            case ROLLBACK_STARTED, ROLLBACK_COMPLETED -> "rollback";
+            case RUN_COMPLETED -> e.detail().startsWith("pipeline") ? "finished" : null;
+            default -> null;
+        };
+        if (what == null) return null;
+        String detail = e.detail().replaceAll("\\s+", " ");
+        if (detail.length() > 140) detail = detail.substring(0, 140) + "...";
+        return String.format(Locale.ROOT, "[%s] %-14s %-15s %s", HHMMSS.format(e.at()), e.stageId() == null ? "-" : e.stageId(), what, detail);
+    }
+
     public Result run(String runId, String requirement, String label) throws Exception {
         Instant start = clock.instant();
         RunRecorder rec = new RunRecorder(config.runsDir().resolve(runId), redactor);
-        AuditLog audit = new AuditLog(clock, rec::onAudit);
+        AuditLog audit = new AuditLog(clock, e -> {
+            rec.onAudit(e);
+            String line = progressLine(e);
+            if (line != null) progress.accept(line);
+        });
         ArtifactStore store = new ArtifactStore();
         rec.attach(store);
         Metrics metrics = new Metrics();

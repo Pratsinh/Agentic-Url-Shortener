@@ -137,9 +137,16 @@ class PipelineEndToEndTest {
     @Test
     void requirementToApprovedCommitWithFullEvidence() throws Exception {
         ScriptedProvider p = model(false, PipelineEndToEndTest::goodImplementer);
-        AgenticPipeline.Result r = pipeline(p, human("pat", id -> HumanChannel.Verdict.APPROVE, "")).run("e2e-ok", "Add a farewell greeting", "test");
+        List<String> progress = new CopyOnWriteArrayList<>();
+        AgenticPipeline.Result r = pipeline(p, human("pat", id -> HumanChannel.Verdict.APPROVE, "")).withProgress(progress::add)
+                .run("e2e-ok", "Add a farewell greeting", "test");
 
         assertEquals("DELIVERED", r.status());
+        assertTrue(progress.stream().anyMatch(l -> l.matches("\\[\\d\\d:\\d\\d:\\d\\d] plan +waiting for you .*")), String.join("\n", progress));
+        assertTrue(progress.stream().anyMatch(l -> l.contains("release") && l.contains("waiting for you")));
+        assertTrue(progress.stream().anyMatch(l -> l.contains("verify") && l.contains("done")));
+        assertTrue(progress.get(progress.size() - 1).contains("finished") && progress.get(progress.size() - 1).contains("status=DELIVERED"));
+        assertTrue(progress.stream().noneMatch(l -> l.contains("tool=") || l.contains("call=")), "tool and model calls are not shown");
         r.delivery().stages().forEach(s -> assertEquals(StageStatus.SUCCEEDED, s.status(), s.stageId() + ": " + s.reason()));
         String log = TestRepo.git(repo, "log", "-1", "--format=%an%n%B", "agentic/e2e-ok");
         assertTrue(log.startsWith("agentic-sdlc\nfeat: add farewell greeting"), log);

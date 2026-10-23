@@ -97,7 +97,8 @@ public final class AgenticCli {
                 : inbox -> new FileHumanChannel(inbox, config.approvalTimeout(), Duration.ofSeconds(2));
         AgenticPipeline pipeline = new AgenticPipeline(config, AnthropicProvider.fromEnv(config.refusalFallback()),
                 new MavenBuildRunner(config.mavenCommand(), Set.of(config.verifyModule()), config.buildTimeout()),
-                human, Clock.systemUTC(), Redactor.fromProcessEnv(), PullRequests.fromEnv(System.getenv()));
+                human, Clock.systemUTC(), Redactor.fromProcessEnv(), PullRequests.fromEnv(System.getenv()))
+                .withProgress(System.out::println);
         System.out.println("run " + runId + " (" + label + "), model " + config.model() + ", approvals via " + mode
                 + "\nrecord: " + config.runsDir().resolve(runId));
         AgenticPipeline.Result r = pipeline.run(runId, requirement, label);
