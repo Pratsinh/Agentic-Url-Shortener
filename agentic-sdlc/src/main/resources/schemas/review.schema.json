@@ -1,0 +1,25 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["verdict", "summary", "findings", "criteria"],
+  "properties": {
+    "verdict": {"type": "string", "enum": ["APPROVE", "REQUEST_CHANGES"]},
+    "summary": {"type": "string", "minLength": 20},
+    "findings": {"type": "array", "maxItems": 30, "items": {
+      "type": "object", "additionalProperties": false,
+      "required": ["severity", "file", "line", "title", "detail", "recommendation"],
+      "properties": {
+        "severity": {"type": "string", "enum": ["BLOCKER", "MAJOR", "MINOR", "INFO"]},
+        "file": {"type": "string"},
+        "line": {"type": "integer", "description": "0 when not line-specific"},
+        "title": {"type": "string", "minLength": 3},
+        "detail": {"type": "string", "minLength": 5},
+        "recommendation": {"type": "string"}}}},
+    "criteria": {"type": "array", "minItems": 1, "items": {
+      "type": "object", "additionalProperties": false, "required": ["id", "met", "evidence"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^AC-[0-9]+$"},
+        "met": {"type": "boolean"},
+        "evidence": {"type": "string", "minLength": 5, "description": "file/test that demonstrates it"}}}}
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["summary", "filesWritten"],
+  "properties": {
+    "summary": {"type": "string", "minLength": 10},
+    "filesWritten": {"type": "array", "minItems": 1, "items": {"type": "string"}}
+  }
+}

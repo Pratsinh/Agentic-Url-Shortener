@@ -25,6 +25,7 @@
       shortener-client    Java client generated from shortener-api at build time
       orchestrator        workflow engine, role agents and tool gateway (plain Java, no dependencies)
       orchestrator-tools  gateway tools over external systems; the shortener tools use shortener-client
+      agentic-sdlc        LLM (Claude) agents on the orchestrator: requirement -> plan -> code -> tests -> review -> approved commit
   -->
   <modules>
     <module>shortener-api</module>
@@ -32,6 +33,7 @@
     <module>shortener-client</module>
     <module>orchestrator</module>
     <module>orchestrator-tools</module>
+    <module>agentic-sdlc</module>
   </modules>
 
   <properties>

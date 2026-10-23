@@ -1,0 +1,11 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["summary", "filesChanged", "testsPassedLocally", "notes"],
+  "properties": {
+    "summary": {"type": "string", "minLength": 10},
+    "filesChanged": {"type": "array", "items": {"type": "string"}},
+    "testsPassedLocally": {"type": "boolean", "description": "true only if your last run_tests call in this task passed"},
+    "notes": {"type": "string", "description": "deviations from the task, follow-ups, or an empty string"}
+  }
+}

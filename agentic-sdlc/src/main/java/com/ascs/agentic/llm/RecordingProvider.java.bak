@@ -1,0 +1,118 @@
+package com.ascs.agentic.llm;
+
+import com.ascs.agentic.json.Json;
+import com.ascs.orchestrator.audit.AuditLog;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+
+import java.time.Clock;
+import java.util.List;
+import java.util.Locale;
+import java.util.function.BiConsumer;
+
+/**
+ * Wraps any provider so that every model call is accounted for: checked against the run's cost guardrail,
+ * recorded in the {@link LlmLedger}, written to the hash-chained audit log ({@code LLM_CALL} with provider,
+ * model, request id, tokens and latency) and persisted as a redacted transcript. The provider name travels with
+ * every record, so a scripted (test) provider can never be mistaken for a real model invocation.
+ */
+public final class RecordingProvider implements Llm.Provider {
+
+    private final Llm.Provider delegate;
+    private final LlmLedger ledger;
+    private final AuditLog audit;
+    private final Clock clock;
+    private final Redactor redactor;
+    private final BiConsumer<String, String> transcripts;
+
+    /** @param transcripts receives (file name, JSON content) for every call; already redacted */
+    public RecordingProvider(Llm.Provider delegate, LlmLedger ledger, AuditLog audit, Clock clock, Redactor redactor,
+                             BiConsumer<String, String> transcripts) {
+        this.delegate = delegate;
+        this.ledger = ledger;
+        this.audit = audit;
+        this.clock = clock;
+        this.redactor = redactor;
+        this.transcripts = transcripts;
+    }
+
+    @Override
+    public String name() {
+        return delegate.name();
+    }
+
+    @Override
+    public Llm.Conversation start(Llm.Spec spec) {
+        Llm.Conversation inner = delegate.start(spec);
+        return new Llm.Conversation() {
+            private boolean first = true;
+
+            @Override
+            public Llm.Turn send(List<Llm.UserBlock> blocks) throws LlmException, InterruptedException {
+                ledger.ensureBudget();
+                int seq = ledger.nextSeq();
+                long start = System.nanoTime();
+                try {
+                    Llm.Turn t = inner.send(blocks);
+                    long ms = (System.nanoTime() - start) / 1_000_000;
+                    Double cost = LlmLedger.estimateCost(t.model(), t.usage());
+                    List<String> tools = t.toolUses().stream().map(Llm.ToolUse::name).toList();
+                    ledger.add(new LlmLedger.CallRecord(seq, clock.instant(), spec.runId(), spec.stageId(), spec.role(),
+                            delegate.name(), spec.model(), t.model(), t.requestId(), t.messageId(), t.stopReason(),
+                            t.usage(), ms, tools, null, cost));
+                    audit.append(spec.runId(), spec.stageId(), AuditLog.Type.LLM_CALL, String.format(Locale.ROOT,
+                            "call=%d provider=%s role=%s model=%s request_id=%s in=%d out=%d cache_read=%d cache_write=%d ms=%d stop=%s tools=%s",
+                            seq, delegate.name(), spec.role(), t.model(), t.requestId(), t.usage().inputTokens(),
+                            t.usage().outputTokens(), t.usage().cacheReadTokens(), t.usage().cacheWriteTokens(), ms,
+                            t.stopReason(), tools));
+                    transcripts.accept(String.format(Locale.ROOT, "%04d-%s.json", seq, safe(spec.stageId())),
+                            transcript(seq, spec, blocks, t, ms, first));
+                    first = false;
+                    return t;
+                } catch (LlmException e) {
+                    long ms = (System.nanoTime() - start) / 1_000_000;
+                    ledger.add(new LlmLedger.CallRecord(seq, clock.instant(), spec.runId(), spec.stageId(), spec.role(),
+                            delegate.name(), spec.model(), spec.model(), "", "", "error", Llm.Usage.ZERO, ms, List.of(),
+                            e.getMessage(), 0.0));
+                    audit.append(spec.runId(), spec.stageId(), AuditLog.Type.LLM_CALL_FAILED, "call=" + seq + " provider="
+                            + delegate.name() + " role=" + spec.role() + " retryable=" + e.retryable() + " " + e.getMessage());
+                    throw e;
+                }
+            }
+        };
+    }
+
+    private String transcript(int seq, Llm.Spec spec, List<Llm.UserBlock> sent, Llm.Turn t, long ms, boolean first) {
+        ObjectNode root = Json.MAPPER.createObjectNode();
+        root.put("call", seq).put("provider", delegate.name()).put("runId", spec.runId()).put("stage", spec.stageId())
+                .put("role", spec.role()).put("requestedModel", spec.model()).put("model", t.model())
+                .put("requestId", t.requestId()).put("messageId", t.messageId()).put("effort", spec.effort())
+                .put("latencyMs", ms).put("stopReason", t.stopReason());
+        root.set("usage", Json.MAPPER.valueToTree(t.usage()));
+        if (first) {
+            root.put("system", redactor.redact(spec.system()));
+            ArrayNode tools = root.putArray("tools");
+            spec.tools().forEach(d -> tools.add(d.name()));
+        }
+        ArrayNode in = root.putArray("sent");
+        for (Llm.UserBlock b : sent) {
+            ObjectNode n = in.addObject();
+            switch (b) {
+                case Llm.Text x -> n.put("type", "text").put("text", redactor.redact(x.text()));
+                case Llm.ToolResult r -> n.put("type", "tool_result").put("toolUseId", r.toolUseId())
+                        .put("isError", r.isError()).put("content", redactor.redact(r.content()));
+            }
+        }
+        ObjectNode out = root.putObject("response");
+        out.put("text", redactor.redact(t.text()));
+        ArrayNode uses = out.putArray("toolUses");
+        for (Llm.ToolUse u : t.toolUses()) {
+            uses.addObject().put("id", u.id()).put("name", u.name()).put("input", redactor.redact(u.input().toString()));
+        }
+        return Json.pretty(root);
+    }
+
+    private static String safe(String s) {
+        return s == null ? "run" : s.replaceAll("[^A-Za-z0-9._-]", "_");
+    }
+}

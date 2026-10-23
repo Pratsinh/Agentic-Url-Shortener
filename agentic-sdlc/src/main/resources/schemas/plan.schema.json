@@ -1,0 +1,23 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["summary", "design", "tasks", "testStrategy", "compatibility", "rollback"],
+  "properties": {
+    "summary": {"type": "string", "minLength": 10, "maxLength": 120, "description": "one line, becomes the commit subject"},
+    "design": {"type": "string", "minLength": 50, "description": "components, API/schema changes, data flow and key decisions"},
+    "tasks": {"type": "array", "minItems": 1, "maxItems": 6, "items": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "title", "description", "module", "files", "dependsOn", "acceptanceCriteria"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^T[0-9]+$"},
+        "title": {"type": "string", "minLength": 5, "maxLength": 100},
+        "description": {"type": "string", "minLength": 20, "description": "precise instructions for the implementer, including the tests to add"},
+        "module": {"type": "string", "enum": ["shortener-service", "shortener-api"]},
+        "files": {"type": "array", "minItems": 1, "maxItems": 12, "items": {"type": "string"}, "description": "every file the task creates or modifies, incl. tests"},
+        "dependsOn": {"type": "array", "items": {"type": "string", "pattern": "^T[0-9]+$"}},
+        "acceptanceCriteria": {"type": "array", "minItems": 1, "items": {"type": "string", "pattern": "^AC-[0-9]+$"}}}}},
+    "testStrategy": {"type": "string", "minLength": 20},
+    "compatibility": {"type": "string", "minLength": 10, "description": "what existing clients/behaviour must not change and how that is ensured"},
+    "rollback": {"type": "string", "minLength": 10}
+  }
+}
