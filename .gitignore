@@ -4,3 +4,4 @@ target/
 *.iml
 # agentic-sdlc run state and isolated worktrees
 .agentic/
+*.bak
